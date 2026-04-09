@@ -63,6 +63,8 @@ app.add_middleware(
 app.include_router(router, prefix="/api")
 app.include_router(ws_router)
 
+from api.upstox_auth import router as upstox_router
+app.include_router(upstox_router, prefix="/api/upstox")
 
 @app.get("/")
 async def root():
