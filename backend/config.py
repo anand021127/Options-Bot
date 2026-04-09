@@ -75,6 +75,8 @@ class Settings(BaseSettings):
     FYERS_SECRET_KEY:  str  = ""
     UPSTOX_API_KEY:    str  = ""
     UPSTOX_API_SECRET: str  = ""
+    UPSTOX_ACCESS_TOKEN: str = ""
+    UPSTOX_REDIRECT_URI: str = ""
 
     MARKET_OPEN:         str = "09:15"
     MARKET_CLOSE:        str = "15:30"
