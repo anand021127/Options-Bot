@@ -81,14 +81,14 @@ function BTSTTab({
           <button
             onClick={onToggle}
             className={`relative w-16 h-8 rounded-full transition-all duration-300 focus:outline-none border-2 ${
-              btstEnabled
+              botStatus?.btst_enabled
                 ? 'bg-brand-yellow border-brand-yellow'
                 : 'bg-brand-border border-brand-border'
             }`}
             aria-label="Toggle BTST"
           >
             <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${
-              btstEnabled ? 'right-0.5' : 'left-0.5'
+              botStatus?.btst_enabled ? 'right-0.5' : 'left-0.5'
             }`} />
           </button>
         </div>
