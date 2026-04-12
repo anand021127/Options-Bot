@@ -117,10 +117,17 @@ export default function BotControls({ botStatus, onStart, onStop, onEmergencySto
     onConfigChange();
   };
 
-  const toggleBTST = async () => {
+const toggleBTST = async () => {
+  try {
+    setLoading(true);
     await api.updateBotConfig({ btst_enabled: !btstOn });
-    onConfigChange();
-  };
+    await onConfigChange();
+  } catch (e) {
+    console.error(e);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleHalt = async () => {
     if (!halted) { await api.haltTrading(); } else { await api.resumeTrading(); }
