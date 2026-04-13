@@ -177,7 +177,6 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
     try:
         token = await _get_token()
 
-        # Upstox /option/contract — instrument_key must be URL-encoded
         async with httpx.AsyncClient(timeout=30) as c:
             resp = await c.get(
                 f"{UPSTOX_BASE}/option/contract",
@@ -192,15 +191,10 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
             return False
 
         body = resp.json()
-
-        # Upstox response: {"status":"success","data":[{...},...]}
-        # Each item has: instrument_key, lot_size, expiry (YYYY-MM-DD),
-        #                strike_price, option_type (CE/PE), trading_symbol
         raw_list = body.get("data", [])
 
         if not raw_list:
-            logger.warning(f"Instruments API returned empty data for {sym}. Body: {str(body)[:300]}")
-            # Mark as loaded to avoid infinite retries
+            logger.warning(f"Instruments API returned empty data for {sym}")
             _instruments_loaded[sym] = True
             return False
 
@@ -208,42 +202,75 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
         count = 0
 
         for inst in raw_list:
-            # Handle both flat and nested structures
-            if isinstance(inst, dict):
-                expiry   = inst.get("expiry") or inst.get("expiry_date") or ""
-                inst_key = inst.get("instrument_key") or inst.get("key") or ""
-                lot_size = inst.get("lot_size") or inst.get("lotSize")
-                strike   = inst.get("strike_price") or inst.get("strike")
-                opt_type = (inst.get("option_type") or inst.get("optionType") or "").upper()
-                trading  = inst.get("trading_symbol") or inst.get("tradingSymbol") or ""
-            else:
+
+            # ✅ FIX START (ONLY THIS PART CHANGED)
+
+            if not isinstance(inst, dict):
                 continue
 
-            # Skip expired, skip incomplete
-            if not expiry or expiry < today_str:
-                continue
-            if not inst_key or not lot_size or strike is None or opt_type not in ("CE", "PE"):
+            expiry_raw = inst.get("expiry") or inst.get("expiry_date") or ""
+            inst_key   = inst.get("instrument_key") or inst.get("key") or ""
+            lot_size   = inst.get("lot_size") or inst.get("lotSize")
+            strike     = inst.get("strike_price") or inst.get("strike")
+            opt_type   = inst.get("option_type") or inst.get("optionType") or ""
+            trading    = inst.get("trading_symbol") or inst.get("tradingSymbol") or ""
+
+            # Normalize expiry safely
+            try:
+                expiry = str(expiry_raw)[:10]
+            except:
                 continue
 
+            if not expiry:
+                continue
+
+            # Skip expired contracts
+            if expiry < today_str:
+                continue
+
+            # Normalize option type
+            opt_type = str(opt_type).upper()
+
+            # Validate required fields
+            if (
+                not inst_key
+                or not lot_size
+                or strike is None
+                or opt_type not in ("CE", "PE")
+            ):
+                continue
+
+            try:
+                strike = float(strike)
+                lot_size = int(lot_size)
+            except:
+                continue
+
+            # Store clean data
             _instruments_cache[inst_key] = {
                 "instrument_key": inst_key,
                 "trading_symbol": trading,
                 "symbol":         sym,
                 "expiry":         expiry,
-                "strike":         float(strike),
+                "strike":         strike,
                 "option_type":    opt_type,
-                "lot_size":       int(lot_size),
+                "lot_size":       lot_size,
                 "exchange":       inst.get("exchange", "NSE"),
             }
+
             count += 1
+
+            # ✅ FIX END
 
         _instruments_loaded[sym] = True
         logger.info(f"✅ Instruments: {sym} → {count} active contracts loaded")
+
         return count > 0
 
     except RuntimeError as e:
         logger.error(f"Instruments blocked — token issue: {e}")
         return False
+
     except Exception as e:
         logger.error(f"Instruments load error for {sym}: {e}")
         return False
