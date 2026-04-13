@@ -201,65 +201,58 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
         today_str = date.today().isoformat()
         count = 0
 
-       for inst in raw_list:
+        for inst in raw_list:
+            if not isinstance(inst, dict):
+                continue
 
-    if not isinstance(inst, dict):
-        continue
+            expiry_raw = inst.get("expiry") or inst.get("expiry_date") or ""
+            inst_key   = inst.get("instrument_key") or inst.get("key") or ""
+            lot_size   = inst.get("lot_size") or inst.get("lotSize")
+            strike     = inst.get("strike_price") or inst.get("strike")
+            opt_type   = inst.get("option_type") or inst.get("optionType") or ""
+            trading    = inst.get("trading_symbol") or inst.get("tradingSymbol") or ""
 
-    expiry_raw = inst.get("expiry") or inst.get("expiry_date") or ""
-    inst_key   = inst.get("instrument_key") or inst.get("key") or ""
-    lot_size   = inst.get("lot_size") or inst.get("lotSize")
-    strike     = inst.get("strike_price") or inst.get("strike")
-    opt_type   = inst.get("option_type") or inst.get("optionType") or ""
-    trading    = inst.get("trading_symbol") or inst.get("tradingSymbol") or ""
+            # Fix expiry parsing
+            try:
+                expiry_dt = datetime.fromisoformat(str(expiry_raw).replace("Z", ""))
+                expiry = expiry_dt.date().isoformat()
+            except:
+                continue
 
-    # ✅ FIX 1: Proper expiry parsing
-    try:
-        expiry_dt = datetime.fromisoformat(str(expiry_raw).replace("Z", ""))
-        expiry = expiry_dt.date().isoformat()
-    except:
-        continue
+            if expiry_dt.date() < date.today():
+                continue
 
-    # Skip expired
-    if expiry_dt.date() < date.today():
-        continue
+            # Fix option type
+            opt_type = str(opt_type).upper()
 
-    # ✅ FIX 2: Normalize option type
-    opt_type = str(opt_type).upper()
+            if opt_type in ["CALL", "CE"]:
+                opt_type = "CE"
+            elif opt_type in ["PUT", "PE"]:
+                opt_type = "PE"
+            else:
+                continue
 
-    if opt_type in ["CALL", "CE"]:
-        opt_type = "CE"
-    elif opt_type in ["PUT", "PE"]:
-        opt_type = "PE"
-    else:
-        continue
+            if not inst_key or not lot_size or strike is None:
+                continue
 
-    # Validate required fields
-    if (
-        not inst_key
-        or not lot_size
-        or strike is None
-    ):
-        continue
+            try:
+                strike = float(strike)
+                lot_size = int(lot_size)
+            except:
+                continue
 
-    try:
-        strike = float(strike)
-        lot_size = int(lot_size)
-    except:
-        continue
+            _instruments_cache[inst_key] = {
+                "instrument_key": inst_key,
+                "trading_symbol": trading,
+                "symbol": sym,
+                "expiry": expiry,
+                "strike": strike,
+                "option_type": opt_type,
+                "lot_size": lot_size,
+                "exchange": inst.get("exchange", "NSE"),
+            }
 
-    _instruments_cache[inst_key] = {
-        "instrument_key": inst_key,
-        "trading_symbol": trading,
-        "symbol":         sym,
-        "expiry":         expiry,
-        "strike":         strike,
-        "option_type":    opt_type,
-        "lot_size":       lot_size,
-        "exchange":       inst.get("exchange", "NSE"),
-    }
-
-    count += 1
+            count += 1
 
             # ✅ FIX END
 
