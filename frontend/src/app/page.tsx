@@ -81,14 +81,14 @@ function BTSTTab({
           <button
             onClick={onToggle}
             className={`relative w-16 h-8 rounded-full transition-all duration-300 focus:outline-none border-2 ${
-              botStatus?.btst_enabled
+              btstEnabled
                 ? 'bg-brand-yellow border-brand-yellow'
                 : 'bg-brand-border border-brand-border'
             }`}
             aria-label="Toggle BTST"
           >
             <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${
-              botStatus?.btst_enabled ? 'right-0.5' : 'left-0.5'
+              btstEnabled ? 'right-0.5' : 'left-0.5'
             }`} />
           </button>
         </div>
@@ -382,13 +382,28 @@ export default function Dashboard() {
     pushAlert('🚨 Emergency stop executed — all positions closed', 'error');
   };
 
-  // BTST toggle — accessible from both BotControls and BTST tab
+  // BTST toggle — optimistic update so UI responds instantly
   const handleBTSTToggle = async () => {
     const newVal = !botStatus.btst_enabled;
-    await api.updateBotConfig({ btst_enabled: newVal });
-    fetchBotStatus();
-    pushAlert(`🌙 BTST ${newVal ? 'enabled' : 'disabled'}`, 'info');
+
+    // 1. Update UI immediately — no network wait
+    setBotStatus((prev: any) => ({ ...prev, btst_enabled: newVal }));
+    pushAlert(`🌙 BTST ${newVal ? 'ON ✅' : 'OFF'}`, 'info');
+
+    // 2. Save to backend
+    try {
+      await api.updateBotConfig({ btst_enabled: newVal });
+    } catch {
+      // Revert on failure
+      setBotStatus((prev: any) => ({ ...prev, btst_enabled: !newVal }));
+      pushAlert('❌ BTST toggle failed — check connection', 'error');
+      return;
+    }
+
+    // 3. Confirm from server
+    await fetchBotStatus();
   };
+
 
   const symbol       = botStatus.symbol || 'NIFTY';
   const hasLiveTrades = premiumTicks.length > 0;
