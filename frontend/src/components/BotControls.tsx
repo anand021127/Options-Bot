@@ -22,7 +22,7 @@ interface Props {
   onStart:         (s: string, c: number, m: string) => Promise<void>;
   onStop:          () => Promise<void>;
   onEmergencyStop: () => Promise<void>;
-  onConfigChange:  () => void;
+  onConfigChange:  () => void | Promise<void>;
 }
 
 export default function BotControls({ botStatus, onStart, onStop, onEmergencyStop, onConfigChange }: Props) {
@@ -117,17 +117,15 @@ export default function BotControls({ botStatus, onStart, onStop, onEmergencySto
     onConfigChange();
   };
 
-const toggleBTST = async () => {
-  try {
-    setLoading(true);
+  const toggleBTST = async () => {
+    // NOTE: primary BTST toggle is in the BTST tab.
+    // This is the secondary toggle inside BotControls config panel.
+    // onConfigChange() triggers fetchBotStatus() in parent — but it's async
+    // and may read stale server state. The BTST tab toggle uses optimistic update.
     await api.updateBotConfig({ btst_enabled: !btstOn });
+    // Await the refresh so state is correct before re-render
     await onConfigChange();
-  } catch (e) {
-    console.error(e);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const handleHalt = async () => {
     if (!halted) { await api.haltTrading(); } else { await api.resumeTrading(); }
@@ -323,10 +321,11 @@ const toggleBTST = async () => {
               <p className="text-sm font-mono font-bold text-brand-yellow">🌙 BTST Module</p>
               <p className="text-xs text-brand-muted mt-0.5">Buy Today Sell Tomorrow overnight</p>
             </div>
-            <div onClick={toggleBTST}
-              className={`w-12 h-6 rounded-full cursor-pointer transition-all relative ${btstOn ? 'bg-brand-yellow' : 'bg-brand-border'}`}>
-              <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${btstOn ? 'right-1' : 'left-1'}`}/>
-            </div>
+            <button
+              onClick={async () => { await toggleBTST(); }}
+              className={`relative w-12 h-6 rounded-full transition-all cursor-pointer focus:outline-none ${btstOn ? 'bg-brand-yellow' : 'bg-brand-border'}`}>
+              <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-200 ${btstOn ? 'right-1' : 'left-1'}`}/>
+            </button>
           </div>
           {btstOn && (
             <div className="space-y-1.5 text-xs font-mono text-brand-muted">
