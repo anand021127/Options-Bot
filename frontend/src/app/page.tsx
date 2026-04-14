@@ -1,5 +1,4 @@
 'use client';
-<<<<<<< HEAD
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Moon, Activity, Wifi, WifiOff, TrendingUp, TrendingDown,
          RefreshCw, Bell, Zap, ZapOff, CheckCircle, XCircle,
@@ -7,14 +6,7 @@ import { Moon, Activity, Wifi, WifiOff, TrendingUp, TrendingDown,
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { api } from '@/utils/api';
 
-=======
-import { useState, useEffect, useCallback } from 'react';
-import { Moon, Activity } from 'lucide-react';
-import { useWebSocket } from '@/hooks/useWebSocket';
-import { api } from '@/utils/api';
-
 // ── Components ──────────────────────────────────────────────────────────────
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
 import Header          from '@/components/Header';
 import PortfolioCard   from '@/components/PortfolioCard';
 import BotControls     from '@/components/BotControls';
@@ -25,7 +17,6 @@ import EquityCurve     from '@/components/EquityCurve';
 import TradeHistory    from '@/components/TradeHistory';
 import IndicatorsPanel from '@/components/IndicatorsPanel';
 import MarketChart     from '@/components/MarketChart';
-<<<<<<< HEAD
 import MarketStatusPanel from '@/components/MarketStatusPanel';
 import StrategyAnalytics from '@/components/StrategyAnalytics';
 import StatsBar        from '@/components/StatsBar';
@@ -33,22 +24,10 @@ import NotificationsPanel from '@/components/NotificationsPanel';
 import TradeTracker    from '@/components/TradeTracker';
 import OptionsChain    from '@/components/OptionsChain';
 
+// ── Tab definition ───────────────────────────────────────────────────────────
 type Tab = 'overview' | 'live' | 'options' | 'chart' | 'signals' | 'btst' | 'analytics' | 'debug';
 
-const TABS: { id: Tab; label: string }[] = [
-=======
-import MarketStatusPanel    from '@/components/MarketStatusPanel';
-import StrategyAnalytics    from '@/components/StrategyAnalytics';
-import StatsBar        from '@/components/StatsBar';
-import NotificationsPanel   from '@/components/NotificationsPanel';
-import TradeTracker    from '@/components/TradeTracker';
-import OptionsChain    from '@/components/OptionsChain';
-
-// ── Tab definition ───────────────────────────────────────────────────────────
-type Tab = 'overview' | 'live' | 'options' | 'chart' | 'signals' | 'btst' | 'analytics';
-
 const TABS: { id: Tab; label: string; icon?: string }[] = [
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   { id: 'overview',   label: 'Home' },
   { id: 'live',       label: 'Trades' },
   { id: 'options',    label: 'Chain' },
@@ -56,15 +35,10 @@ const TABS: { id: Tab; label: string; icon?: string }[] = [
   { id: 'signals',    label: 'Signals' },
   { id: 'btst',       label: '🌙 BTST' },
   { id: 'analytics',  label: 'Stats' },
-<<<<<<< HEAD
   { id: 'debug',      label: '🛠 Debug' },
 ];
 
-=======
-];
-
 // ── Alert colors ─────────────────────────────────────────────────────────────
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
 const ALERT_COLORS: Record<string, string> = {
   error:   'bg-brand-red/10 border-brand-red/30 text-brand-red',
   success: 'bg-brand-green/10 border-brand-green/30 text-brand-green',
@@ -72,7 +46,6 @@ const ALERT_COLORS: Record<string, string> = {
   warn:    'bg-brand-yellow/10 border-brand-yellow/30 text-brand-yellow',
 };
 
-<<<<<<< HEAD
 // ── Live Status Bar ──────────────────────────────────────────────────────────
 function LiveStatusBar({ botStatus, wsConnected, wsDataConnected, upstoxStatus, marketOpen }: any) {
   const items = [
@@ -304,7 +277,6 @@ function BTSTTab({ botStatus, btstTrades, onToggle, onConfigChange }: {
   const [history, setHistory] = useState<any[]>([]);
   const [signal,  setSignal]  = useState<any>(null);
   const [loading, setLoading] = useState(false);
-=======
 // ── BTST Tab component ────────────────────────────────────────────────────────
 function BTSTTab({
   botStatus, btstTrades, onToggle, onConfigChange,
@@ -314,7 +286,6 @@ function BTSTTab({
   const [history,  setHistory]  = useState<any[]>([]);
   const [signal,   setSignal]   = useState<any>(null);
   const [loading,  setLoading]  = useState(false);
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   const btstEnabled = botStatus?.btst_enabled;
 
   useEffect(() => {
@@ -330,25 +301,21 @@ function BTSTTab({
 
   return (
     <div className="space-y-4 animate-slide-up">
-<<<<<<< HEAD
       {/* Master toggle */}
       <div className="bg-brand-card card-glow rounded-2xl p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Moon size={16} className="text-brand-yellow"/>
-=======
       {/* BTST Master Toggle Card */}
       <div className="bg-brand-card card-glow rounded-2xl p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Moon size={16} className="text-brand-yellow" />
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
             <div>
               <p className="font-display font-bold text-sm">BTST Module</p>
               <p className="text-brand-muted text-xs font-mono">Buy Today Sell Tomorrow</p>
             </div>
           </div>
-<<<<<<< HEAD
           <button
             onClick={onToggle}
             className={`relative w-16 h-8 rounded-full transition-all duration-300 border-2 focus:outline-none ${
@@ -361,7 +328,6 @@ function BTSTTab({
             }`}/>
           </button>
         </div>
-=======
           {/* Large visible toggle */}
           <button
             onClick={onToggle}
@@ -378,7 +344,6 @@ function BTSTTab({
           </button>
         </div>
 
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
         <div className={`text-xs font-mono px-3 py-1.5 rounded-lg inline-block ${
           btstEnabled
             ? 'bg-brand-yellow/15 text-brand-yellow border border-brand-yellow/30'
@@ -386,7 +351,6 @@ function BTSTTab({
         }`}>
           {btstEnabled ? '✅ BTST ON — monitoring 14:45–15:10 IST' : '⭕ BTST OFF — tap toggle to enable'}
         </div>
-<<<<<<< HEAD
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-mono text-brand-muted">
           <div className="bg-brand-surface rounded-xl p-2.5 space-y-1">
             <p className="text-brand-text font-semibold">Entry (14:45–15:10)</p>
@@ -402,7 +366,6 @@ function BTSTTab({
             <p>• +40% gap → early exit</p>
             <p>• SL hit → early exit</p>
             <p className="mt-1 text-brand-text font-semibold">Risk: 1% capital max</p>
-=======
 
         {/* Rules card */}
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-mono text-brand-muted">
@@ -425,12 +388,10 @@ function BTSTTab({
             <p>• 1% of capital max</p>
             <p>• lot_size from Upstox API</p>
             <p>• expiry from Upstox API</p>
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
           </div>
         </div>
       </div>
 
-<<<<<<< HEAD
       {btstTrades.length > 0 && <BTSTPanel btst={btstTrades}/>}
 
       {btstTrades.length === 0 && btstEnabled && (
@@ -438,7 +399,6 @@ function BTSTTab({
           <Moon size={24} className="text-brand-yellow mx-auto mb-2 opacity-50"/>
           <p className="text-brand-muted text-xs font-mono">
             No active BTST positions. Entry window: 14:45–15:10 IST.
-=======
       {/* Active BTST positions */}
       {btstTrades.length > 0 && <BTSTPanel btst={btstTrades} />}
 
@@ -450,7 +410,6 @@ function BTSTTab({
             {new Date().getHours() >= 14 && new Date().getHours() < 15
               ? 'Scanning for entry signal 14:45–15:10...'
               : 'Entry window: 14:45–15:10 IST today.'}
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
           </p>
         </div>
       )}
@@ -464,7 +423,6 @@ function BTSTTab({
             {loading ? 'Checking...' : 'Check Now'}
           </button>
         </div>
-<<<<<<< HEAD
         {signal ? (
           <div className={`rounded-xl p-3 border text-xs font-mono ${
             signal.error ? 'bg-brand-red/10 border-brand-red/30 text-brand-red'
@@ -518,7 +476,6 @@ function BTSTTab({
               </div>
             </div>
           ))}
-=======
         {signal && (
           <div className={`rounded-xl p-3 border text-xs font-mono ${
             signal.error ? 'bg-brand-red/10 border-brand-red/30 text-brand-red' :
@@ -595,7 +552,6 @@ function BTSTTab({
               );
             })}
           </div>
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
         </div>
       )}
     </div>
@@ -604,10 +560,7 @@ function BTSTTab({
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
-<<<<<<< HEAD
-=======
   // Bot state
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   const [botStatus, setBotStatus] = useState<any>({
     is_running: false, mode: 'paper', symbol: 'NIFTY',
     capital: 100000, daily_pnl: 0, total_pnl: 0,
@@ -619,7 +572,6 @@ export default function Dashboard() {
     trading_halted_today: false, remaining_daily_risk: 3000,
   });
 
-<<<<<<< HEAD
   const [price,         setPrice]         = useState<any>(null);
   const [signal,        setSignal]         = useState<any>(null);
   const [indicators,    setIndicators]     = useState<any>(null);
@@ -639,7 +591,6 @@ export default function Dashboard() {
   const [loading,       setLoading]        = useState(true);
   const [showNotifs,    setShowNotifs]     = useState(false);
   const [unreadCount,   setUnreadCount]    = useState(0);
-=======
   // Market data
   const [price,       setPrice]       = useState<any>(null);
   const [signal,      setSignal]      = useState<any>(null);
@@ -662,23 +613,18 @@ export default function Dashboard() {
   const [loading,     setLoading]     = useState(true);
   const [showNotifs,  setShowNotifs]  = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
 
   const pushAlert = (msg: string, type = 'warn') => {
     setAlerts(a => [{ msg, type }, ...a].slice(0, 4));
     setTimeout(() => setAlerts(a => a.slice(0, -1)), 9000);
   };
 
-<<<<<<< HEAD
   // WebSocket handlers
-=======
   // ── WebSocket handlers ──────────────────────────────────────────────────────
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   const { connected } = useWebSocket({
     bot_status:       (d) => setBotStatus((p: any) => ({ ...p, ...d })),
     portfolio_update: (d) => setBotStatus((p: any) => ({ ...p, ...d })),
     signal:           (d) => setSignal(d),
-<<<<<<< HEAD
     premium_tick:     (d) => {
       setPremiumTicks(d.ticks || []);
       if (d.spot) setLiveSpot(d.spot);
@@ -686,7 +632,6 @@ export default function Dashboard() {
     trade_entered: (d) => {
       fetchOpenTrades(); fetchStats();
       pushAlert(`📈 Trade | ${d.option_type} ₹${d.strike} | ₹${d.entry_option_price || d.fill_price}`, 'success');
-=======
 
     // Real-time option premiums from Upstox — powers TradeTracker
     premium_tick: (d) => {
@@ -700,12 +645,10 @@ export default function Dashboard() {
         `📈 Trade opened | ${d.option_type} ₹${d.strike} | Premium ₹${d.entry_option_price || d.fill_price}`,
         'success'
       );
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
     },
     trade_closed: (d) => {
       fetchOpenTrades(); fetchStats(); fetchEquity();
       setPremiumTicks(prev => prev.filter(t => t.id !== d.id));
-<<<<<<< HEAD
       pushAlert(`Trade closed | ₹${d.pnl > 0 ? '+' : ''}${d.pnl?.toFixed(0)}`, d.pnl > 0 ? 'success' : 'warn');
     },
     partial_booked:  (d) => pushAlert(`📦 Partial +₹${d.partial_pnl?.toFixed(0)} | SL→BE`, 'info'),
@@ -719,7 +662,6 @@ export default function Dashboard() {
     pong:            () => {},
   });
 
-=======
       pushAlert(
         `Trade closed | P&L ₹${d.pnl > 0 ? '+' : ''}${d.pnl?.toFixed(0)}`,
         d.pnl > 0 ? 'success' : 'warn'
@@ -746,7 +688,6 @@ export default function Dashboard() {
   });
 
   // ── Fetchers ────────────────────────────────────────────────────────────────
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   const fetchBotStatus  = async () => { try { setBotStatus(await api.getBotStatus()); } catch {} };
   const fetchOpenTrades = async () => { try { setOpenTrades(await api.getOpenTrades()); } catch {} };
   const fetchBTST       = async () => { try { setBtst(await api.getBTSTOpen()); } catch {} };
@@ -756,7 +697,6 @@ export default function Dashboard() {
     try { setIndicators(await api.getIndicators(botStatus.symbol || 'NIFTY')); } catch {}
   };
 
-<<<<<<< HEAD
   const checkUpstoxStatus = useCallback(async () => {
     try { setUpstoxStatus(await api.getUpstoxStatus()); } catch {}
   }, []);
@@ -766,10 +706,8 @@ export default function Dashboard() {
       const d = await api.getWsStatus();
       setWsConnected(d.connected || false);
     } catch {}
-=======
   const checkWsStatus = useCallback(async () => {
     try { const d = await api.getWsStatus(); setWsConnected(d.connected || false); } catch {}
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   }, []);
 
   const fetchAll = useCallback(async () => {
@@ -780,11 +718,8 @@ export default function Dashboard() {
         api.getNotifications(5, true),
       ]);
       if (s.status === 'fulfilled')     setBotStatus(s.value);
-<<<<<<< HEAD
       if (p.status === 'fulfilled')     { setPrice(p.value); setLiveSpot(p.value?.price || 0); setMarketOpen(p.value?.market_open || false); }
-=======
       if (p.status === 'fulfilled')     { setPrice(p.value); setLiveSpot(p.value?.price || 0); }
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
       if (ot.status === 'fulfilled')    setOpenTrades(ot.value);
       if (bt.status === 'fulfilled')    setBtst(bt.value);
       if (eq.status === 'fulfilled')    setEquityCurve(eq.value);
@@ -794,23 +729,19 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
-<<<<<<< HEAD
   useEffect(() => { checkUpstoxStatus(); const iv = setInterval(checkUpstoxStatus, 60000); return () => clearInterval(iv); }, [checkUpstoxStatus]);
   useEffect(() => { checkWsStatus(); const iv = setInterval(checkWsStatus, 30000); return () => clearInterval(iv); }, [checkWsStatus]);
-=======
   useEffect(() => {
     checkWsStatus();
     const iv = setInterval(checkWsStatus, 30000);
     return () => clearInterval(iv);
   }, [checkWsStatus]);
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   useEffect(() => {
     const iv = setInterval(async () => {
       try {
         const p = await api.getPrice(botStatus.symbol || 'NIFTY');
         setPrice(p);
         if (p?.price) setLiveSpot(p.price);
-<<<<<<< HEAD
         if (p?.market_open !== undefined) setMarketOpen(p.market_open);
       } catch {}
     }, 30000);
@@ -847,7 +778,6 @@ export default function Dashboard() {
     <div className="min-h-screen flex items-center justify-center bg-brand-bg">
       <div className="text-center">
         <div className="w-10 h-10 border-2 border-brand-accent border-t-transparent rounded-full animate-spin mx-auto mb-3"/>
-=======
       } catch {}
     }, 60000);
     return () => clearInterval(iv);
@@ -897,7 +827,6 @@ export default function Dashboard() {
     <div className="min-h-screen flex items-center justify-center bg-brand-bg">
       <div className="text-center">
         <div className="w-10 h-10 border-2 border-brand-accent border-t-transparent rounded-full animate-spin mx-auto mb-3" />
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
         <p className="text-brand-muted font-mono text-sm">Connecting to Upstox...</p>
       </div>
     </div>
@@ -914,7 +843,6 @@ export default function Dashboard() {
         onBellClick={() => { setShowNotifs(true); setUnreadCount(0); }}
       />
 
-<<<<<<< HEAD
       {/* Live Status Bar */}
       <LiveStatusBar
         botStatus={botStatus}
@@ -924,8 +852,6 @@ export default function Dashboard() {
         marketOpen={marketOpen}
       />
 
-=======
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
       {/* Alert toasts */}
       {alerts.length > 0 && (
         <div className="px-3 pt-2 space-y-1">
@@ -937,30 +863,23 @@ export default function Dashboard() {
         </div>
       )}
 
-<<<<<<< HEAD
       <StatsBar stats={stats}/>
 
       {/* Tab bar */}
-=======
       <StatsBar stats={stats} />
 
       {/* ── Tab bar ── */}
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
       <div className="sticky top-0 z-20 bg-brand-bg/95 backdrop-blur border-b border-brand-border">
         <div className="flex overflow-x-auto scrollbar-none">
           {TABS.map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id)}
-<<<<<<< HEAD
               className={`flex-shrink-0 py-2.5 text-xs font-semibold transition-all whitespace-nowrap px-2 min-w-[52px] ${
-=======
               className={`flex-1 py-2.5 text-xs font-semibold transition-all whitespace-nowrap px-1.5 min-w-0 ${
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
                 activeTab === t.id
                   ? 'text-brand-accent border-b-2 border-brand-accent bg-brand-accent/5'
                   : 'text-brand-muted hover:text-brand-text'
               }`}>
               {t.label}
-<<<<<<< HEAD
               {t.id === 'live' && hasLiveTrades && (
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-green ml-1 animate-pulse align-middle"/>
               )}
@@ -969,27 +888,23 @@ export default function Dashboard() {
               )}
               {t.id === 'debug' && (
                 <span className={`inline-block w-1.5 h-1.5 rounded-full ml-1 align-middle ${wsConnected && wsDataConnected ? 'bg-brand-green' : 'bg-brand-red'}`}/>
-=======
               {/* Dot indicators */}
               {t.id === 'live' && hasLiveTrades && (
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-green ml-1 animate-pulse align-middle" />
               )}
               {t.id === 'btst' && btst.length > 0 && (
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-yellow ml-1 align-middle" />
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
               )}
             </button>
           ))}
         </div>
       </div>
 
-<<<<<<< HEAD
       <main className="px-3 py-4 max-w-2xl mx-auto space-y-4 pb-10">
 
         {activeTab === 'overview' && (
           <div className="space-y-4 animate-slide-up">
             <PortfolioCard botStatus={botStatus}/>
-=======
       {/* ── Tab content ── */}
       <main className="px-3 py-4 max-w-2xl mx-auto space-y-4 pb-10">
 
@@ -997,7 +912,6 @@ export default function Dashboard() {
         {activeTab === 'overview' && (
           <div className="space-y-4 animate-slide-up">
             <PortfolioCard botStatus={botStatus} />
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
             <BotControls
               botStatus={botStatus}
               onStart={handleStart}
@@ -1005,7 +919,6 @@ export default function Dashboard() {
               onEmergencyStop={handleEmergencyStop}
               onConfigChange={fetchBotStatus}
             />
-<<<<<<< HEAD
             {hasLiveTrades && <TradeTracker ticks={premiumTicks} currentSpot={liveSpot}/>}
             <EquityCurve data={equityCurve}/>
             {btst.length > 0 && <BTSTPanel btst={btst}/>}
@@ -1044,7 +957,6 @@ export default function Dashboard() {
         {activeTab === 'signals' && (
           <div className="space-y-4 animate-slide-up">
             <MarketStatusPanel symbol={symbol} indicators={indicators}/>
-=======
             {hasLiveTrades && (
               <TradeTracker ticks={premiumTicks} currentSpot={liveSpot} />
             )}
@@ -1093,7 +1005,6 @@ export default function Dashboard() {
         {activeTab === 'signals' && (
           <div className="space-y-4 animate-slide-up">
             <MarketStatusPanel symbol={symbol} indicators={indicators} />
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
             <SignalCard
               signal={signal}
               symbol={symbol}
@@ -1104,10 +1015,7 @@ export default function Dashboard() {
           </div>
         )}
 
-<<<<<<< HEAD
-=======
         {/* ── BTST ──────────────────────────────────────────────────────── */}
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
         {activeTab === 'btst' && (
           <BTSTTab
             botStatus={botStatus}
@@ -1117,7 +1025,6 @@ export default function Dashboard() {
           />
         )}
 
-<<<<<<< HEAD
         {activeTab === 'analytics' && (
           <div className="space-y-4 animate-slide-up">
             <StrategyAnalytics/>
@@ -1133,7 +1040,6 @@ export default function Dashboard() {
       </main>
 
       {showNotifs && <NotificationsPanel onClose={() => setShowNotifs(false)}/>}
-=======
         {/* ── ANALYTICS ─────────────────────────────────────────────────── */}
         {activeTab === 'analytics' && (
           <div className="space-y-4 animate-slide-up">
@@ -1146,7 +1052,6 @@ export default function Dashboard() {
       </main>
 
       {showNotifs && <NotificationsPanel onClose={() => setShowNotifs(false)} />}
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
     </div>
   );
 }
