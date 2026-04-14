@@ -328,6 +328,7 @@ async def ws_status():
         return get_ws_status()
     except Exception as e:
         return {"connected": False, "error": str(e)}
+<<<<<<< HEAD
 
 
 # ─── Debug Endpoints (helps diagnose API issues live) ────────────────────────
@@ -400,3 +401,5 @@ async def get_recent_logs():
         "instruments_count":  len(_instruments_cache),
         "market_open":        __import__("data.upstox_market", fromlist=["is_market_open"]).is_market_open(),
     }
+=======
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92

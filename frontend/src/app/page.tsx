@@ -1,4 +1,5 @@
 'use client';
+<<<<<<< HEAD
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Moon, Activity, Wifi, WifiOff, TrendingUp, TrendingDown,
          RefreshCw, Bell, Zap, ZapOff, CheckCircle, XCircle,
@@ -6,6 +7,14 @@ import { Moon, Activity, Wifi, WifiOff, TrendingUp, TrendingDown,
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { api } from '@/utils/api';
 
+=======
+import { useState, useEffect, useCallback } from 'react';
+import { Moon, Activity } from 'lucide-react';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { api } from '@/utils/api';
+
+// ── Components ──────────────────────────────────────────────────────────────
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
 import Header          from '@/components/Header';
 import PortfolioCard   from '@/components/PortfolioCard';
 import BotControls     from '@/components/BotControls';
@@ -16,6 +25,7 @@ import EquityCurve     from '@/components/EquityCurve';
 import TradeHistory    from '@/components/TradeHistory';
 import IndicatorsPanel from '@/components/IndicatorsPanel';
 import MarketChart     from '@/components/MarketChart';
+<<<<<<< HEAD
 import MarketStatusPanel from '@/components/MarketStatusPanel';
 import StrategyAnalytics from '@/components/StrategyAnalytics';
 import StatsBar        from '@/components/StatsBar';
@@ -26,6 +36,19 @@ import OptionsChain    from '@/components/OptionsChain';
 type Tab = 'overview' | 'live' | 'options' | 'chart' | 'signals' | 'btst' | 'analytics' | 'debug';
 
 const TABS: { id: Tab; label: string }[] = [
+=======
+import MarketStatusPanel    from '@/components/MarketStatusPanel';
+import StrategyAnalytics    from '@/components/StrategyAnalytics';
+import StatsBar        from '@/components/StatsBar';
+import NotificationsPanel   from '@/components/NotificationsPanel';
+import TradeTracker    from '@/components/TradeTracker';
+import OptionsChain    from '@/components/OptionsChain';
+
+// ── Tab definition ───────────────────────────────────────────────────────────
+type Tab = 'overview' | 'live' | 'options' | 'chart' | 'signals' | 'btst' | 'analytics';
+
+const TABS: { id: Tab; label: string; icon?: string }[] = [
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   { id: 'overview',   label: 'Home' },
   { id: 'live',       label: 'Trades' },
   { id: 'options',    label: 'Chain' },
@@ -33,9 +56,15 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'signals',    label: 'Signals' },
   { id: 'btst',       label: '🌙 BTST' },
   { id: 'analytics',  label: 'Stats' },
+<<<<<<< HEAD
   { id: 'debug',      label: '🛠 Debug' },
 ];
 
+=======
+];
+
+// ── Alert colors ─────────────────────────────────────────────────────────────
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
 const ALERT_COLORS: Record<string, string> = {
   error:   'bg-brand-red/10 border-brand-red/30 text-brand-red',
   success: 'bg-brand-green/10 border-brand-green/30 text-brand-green',
@@ -43,6 +72,7 @@ const ALERT_COLORS: Record<string, string> = {
   warn:    'bg-brand-yellow/10 border-brand-yellow/30 text-brand-yellow',
 };
 
+<<<<<<< HEAD
 // ── Live Status Bar ──────────────────────────────────────────────────────────
 function LiveStatusBar({ botStatus, wsConnected, wsDataConnected, upstoxStatus, marketOpen }: any) {
   const items = [
@@ -274,6 +304,17 @@ function BTSTTab({ botStatus, btstTrades, onToggle, onConfigChange }: {
   const [history, setHistory] = useState<any[]>([]);
   const [signal,  setSignal]  = useState<any>(null);
   const [loading, setLoading] = useState(false);
+=======
+// ── BTST Tab component ────────────────────────────────────────────────────────
+function BTSTTab({
+  botStatus, btstTrades, onToggle, onConfigChange,
+}: {
+  botStatus: any; btstTrades: any[]; onToggle: () => void; onConfigChange: () => void;
+}) {
+  const [history,  setHistory]  = useState<any[]>([]);
+  const [signal,   setSignal]   = useState<any>(null);
+  const [loading,  setLoading]  = useState(false);
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   const btstEnabled = botStatus?.btst_enabled;
 
   useEffect(() => {
@@ -289,16 +330,25 @@ function BTSTTab({ botStatus, btstTrades, onToggle, onConfigChange }: {
 
   return (
     <div className="space-y-4 animate-slide-up">
+<<<<<<< HEAD
       {/* Master toggle */}
       <div className="bg-brand-card card-glow rounded-2xl p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Moon size={16} className="text-brand-yellow"/>
+=======
+      {/* BTST Master Toggle Card */}
+      <div className="bg-brand-card card-glow rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Moon size={16} className="text-brand-yellow" />
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
             <div>
               <p className="font-display font-bold text-sm">BTST Module</p>
               <p className="text-brand-muted text-xs font-mono">Buy Today Sell Tomorrow</p>
             </div>
           </div>
+<<<<<<< HEAD
           <button
             onClick={onToggle}
             className={`relative w-16 h-8 rounded-full transition-all duration-300 border-2 focus:outline-none ${
@@ -311,6 +361,24 @@ function BTSTTab({ botStatus, btstTrades, onToggle, onConfigChange }: {
             }`}/>
           </button>
         </div>
+=======
+          {/* Large visible toggle */}
+          <button
+            onClick={onToggle}
+            className={`relative w-16 h-8 rounded-full transition-all duration-300 focus:outline-none border-2 ${
+              btstEnabled
+                ? 'bg-brand-yellow border-brand-yellow'
+                : 'bg-brand-border border-brand-border'
+            }`}
+            aria-label="Toggle BTST"
+          >
+            <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${
+              btstEnabled ? 'right-0.5' : 'left-0.5'
+            }`} />
+          </button>
+        </div>
+
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
         <div className={`text-xs font-mono px-3 py-1.5 rounded-lg inline-block ${
           btstEnabled
             ? 'bg-brand-yellow/15 text-brand-yellow border border-brand-yellow/30'
@@ -318,6 +386,7 @@ function BTSTTab({ botStatus, btstTrades, onToggle, onConfigChange }: {
         }`}>
           {btstEnabled ? '✅ BTST ON — monitoring 14:45–15:10 IST' : '⭕ BTST OFF — tap toggle to enable'}
         </div>
+<<<<<<< HEAD
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-mono text-brand-muted">
           <div className="bg-brand-surface rounded-xl p-2.5 space-y-1">
             <p className="text-brand-text font-semibold">Entry (14:45–15:10)</p>
@@ -333,10 +402,35 @@ function BTSTTab({ botStatus, btstTrades, onToggle, onConfigChange }: {
             <p>• +40% gap → early exit</p>
             <p>• SL hit → early exit</p>
             <p className="mt-1 text-brand-text font-semibold">Risk: 1% capital max</p>
+=======
+
+        {/* Rules card */}
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-mono text-brand-muted">
+          <div className="bg-brand-surface rounded-xl p-2.5 space-y-1">
+            <p className="text-brand-text font-semibold text-xs">Entry (14:45–15:10)</p>
+            <p>• ADX ≥ 25 (strong trend)</p>
+            <p>• Confirmed 15min breakout</p>
+            <p>• Volume above average</p>
+            <p>• RSI 25–72 range</p>
+            <p>• IVR &lt; 60</p>
+            <p>• Skips expiry days</p>
+            <p>• Max 1 trade/day</p>
+          </div>
+          <div className="bg-brand-surface rounded-xl p-2.5 space-y-1">
+            <p className="text-brand-text font-semibold text-xs">Exit (next morning)</p>
+            <p>• 09:20 IST primary exit</p>
+            <p>• +40% gap profit → early</p>
+            <p>• SL hit → early exit</p>
+            <p className="mt-2 text-brand-text font-semibold">Risk</p>
+            <p>• 1% of capital max</p>
+            <p>• lot_size from Upstox API</p>
+            <p>• expiry from Upstox API</p>
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
           </div>
         </div>
       </div>
 
+<<<<<<< HEAD
       {btstTrades.length > 0 && <BTSTPanel btst={btstTrades}/>}
 
       {btstTrades.length === 0 && btstEnabled && (
@@ -344,6 +438,19 @@ function BTSTTab({ botStatus, btstTrades, onToggle, onConfigChange }: {
           <Moon size={24} className="text-brand-yellow mx-auto mb-2 opacity-50"/>
           <p className="text-brand-muted text-xs font-mono">
             No active BTST positions. Entry window: 14:45–15:10 IST.
+=======
+      {/* Active BTST positions */}
+      {btstTrades.length > 0 && <BTSTPanel btst={btstTrades} />}
+
+      {btstTrades.length === 0 && btstEnabled && (
+        <div className="bg-brand-card card-glow rounded-2xl p-4 text-center">
+          <Moon size={24} className="text-brand-yellow mx-auto mb-2 opacity-50" />
+          <p className="text-brand-muted text-xs font-mono">
+            No active BTST positions.{' '}
+            {new Date().getHours() >= 14 && new Date().getHours() < 15
+              ? 'Scanning for entry signal 14:45–15:10...'
+              : 'Entry window: 14:45–15:10 IST today.'}
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
           </p>
         </div>
       )}
@@ -357,6 +464,7 @@ function BTSTTab({ botStatus, btstTrades, onToggle, onConfigChange }: {
             {loading ? 'Checking...' : 'Check Now'}
           </button>
         </div>
+<<<<<<< HEAD
         {signal ? (
           <div className={`rounded-xl p-3 border text-xs font-mono ${
             signal.error ? 'bg-brand-red/10 border-brand-red/30 text-brand-red'
@@ -410,6 +518,84 @@ function BTSTTab({ botStatus, btstTrades, onToggle, onConfigChange }: {
               </div>
             </div>
           ))}
+=======
+        {signal && (
+          <div className={`rounded-xl p-3 border text-xs font-mono ${
+            signal.error ? 'bg-brand-red/10 border-brand-red/30 text-brand-red' :
+            signal.signal_type?.includes('BTST') && !signal.blocked_by
+              ? 'bg-brand-green/10 border-brand-green/30'
+              : 'bg-brand-surface border-brand-border'
+          }`}>
+            {signal.error ? (
+              <p className="text-brand-red">Error: {signal.error}</p>
+            ) : (
+              <>
+                <p className="font-bold text-brand-text mb-1">{signal.signal_type}</p>
+                {signal.blocked_by && (
+                  <p className="text-brand-yellow">Blocked: {signal.blocked_by}</p>
+                )}
+                {signal.option && (
+                  <div className="mt-2 grid grid-cols-2 gap-1 text-brand-muted">
+                    <span>Strike: <span className="text-brand-text">₹{signal.option.strike}</span></span>
+                    <span>Type: <span className="text-brand-text">{signal.option.option_type}</span></span>
+                    <span>LTP: <span className="text-brand-text">₹{signal.option.ltp}</span></span>
+                    <span>Lot: <span className="text-brand-text">{signal.option.lot_size} (API)</span></span>
+                    <span>Expiry: <span className="text-brand-text">{signal.option.expiry}</span></span>
+                    <span>Score: <span className="text-brand-text">{signal.score}</span></span>
+                  </div>
+                )}
+                {signal.reasons?.length > 0 && (
+                  <div className="mt-2 space-y-0.5 text-brand-muted">
+                    {signal.reasons.slice(0, 4).map((r: string, i: number) => (
+                      <p key={i}>{r}</p>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+        {!signal && (
+          <p className="text-brand-muted text-xs font-mono">
+            Tap "Check Now" to preview what the BTST scanner sees right now.
+          </p>
+        )}
+      </div>
+
+      {/* BTST history */}
+      {history.length > 0 && (
+        <div className="bg-brand-card card-glow rounded-2xl p-4 space-y-3">
+          <p className="font-display font-bold text-sm">Recent BTST Trades</p>
+          <div className="space-y-2">
+            {history.slice(0, 5).map((t: any) => {
+              const isPos = t.pnl >= 0;
+              return (
+                <div key={t.id} className="bg-brand-surface rounded-xl p-3 border border-brand-border">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                        t.option_type === 'CE'
+                          ? 'bg-brand-green/15 text-brand-green'
+                          : 'bg-brand-red/15 text-brand-red'
+                      }`}>{t.option_type}</span>
+                      <span className="font-mono text-sm font-bold">₹{t.strike}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-mono font-bold text-sm ${isPos ? 'text-brand-green' : 'text-brand-red'}`}>
+                        {isPos ? '+' : ''}₹{t.pnl?.toFixed(0) ?? '--'}
+                      </p>
+                      <p className="text-brand-muted text-xs font-mono">{t.exit_reason || t.status}</p>
+                    </div>
+                  </div>
+                  <div className="mt-1 flex justify-between text-xs font-mono text-brand-muted">
+                    <span>Entry ₹{t.entry_price} → Exit ₹{t.exit_price || '--'}</span>
+                    <span>{t.expiry}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
         </div>
       )}
     </div>
@@ -418,6 +604,10 @@ function BTSTTab({ botStatus, btstTrades, onToggle, onConfigChange }: {
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
+<<<<<<< HEAD
+=======
+  // Bot state
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   const [botStatus, setBotStatus] = useState<any>({
     is_running: false, mode: 'paper', symbol: 'NIFTY',
     capital: 100000, daily_pnl: 0, total_pnl: 0,
@@ -429,6 +619,7 @@ export default function Dashboard() {
     trading_halted_today: false, remaining_daily_risk: 3000,
   });
 
+<<<<<<< HEAD
   const [price,         setPrice]         = useState<any>(null);
   const [signal,        setSignal]         = useState<any>(null);
   const [indicators,    setIndicators]     = useState<any>(null);
@@ -448,17 +639,46 @@ export default function Dashboard() {
   const [loading,       setLoading]        = useState(true);
   const [showNotifs,    setShowNotifs]     = useState(false);
   const [unreadCount,   setUnreadCount]    = useState(0);
+=======
+  // Market data
+  const [price,       setPrice]       = useState<any>(null);
+  const [signal,      setSignal]      = useState<any>(null);
+  const [indicators,  setIndicators]  = useState<any>(null);
+  const [wsConnected, setWsConnected] = useState(false);
+
+  // Trade data
+  const [openTrades,  setOpenTrades]  = useState<any[]>([]);
+  const [btst,        setBtst]        = useState<any[]>([]);
+  const [equityCurve, setEquityCurve] = useState<any[]>([]);
+  const [stats,       setStats]       = useState<any>(null);
+
+  // Live premium ticks from premium_tick WS event
+  const [premiumTicks, setPremiumTicks] = useState<any[]>([]);
+  const [liveSpot,     setLiveSpot]     = useState<number>(0);
+
+  // UI
+  const [alerts,      setAlerts]      = useState<{ msg: string; type: string }[]>([]);
+  const [activeTab,   setActiveTab]   = useState<Tab>('overview');
+  const [loading,     setLoading]     = useState(true);
+  const [showNotifs,  setShowNotifs]  = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
 
   const pushAlert = (msg: string, type = 'warn') => {
     setAlerts(a => [{ msg, type }, ...a].slice(0, 4));
     setTimeout(() => setAlerts(a => a.slice(0, -1)), 9000);
   };
 
+<<<<<<< HEAD
   // WebSocket handlers
+=======
+  // ── WebSocket handlers ──────────────────────────────────────────────────────
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   const { connected } = useWebSocket({
     bot_status:       (d) => setBotStatus((p: any) => ({ ...p, ...d })),
     portfolio_update: (d) => setBotStatus((p: any) => ({ ...p, ...d })),
     signal:           (d) => setSignal(d),
+<<<<<<< HEAD
     premium_tick:     (d) => {
       setPremiumTicks(d.ticks || []);
       if (d.spot) setLiveSpot(d.spot);
@@ -466,10 +686,26 @@ export default function Dashboard() {
     trade_entered: (d) => {
       fetchOpenTrades(); fetchStats();
       pushAlert(`📈 Trade | ${d.option_type} ₹${d.strike} | ₹${d.entry_option_price || d.fill_price}`, 'success');
+=======
+
+    // Real-time option premiums from Upstox — powers TradeTracker
+    premium_tick: (d) => {
+      setPremiumTicks(d.ticks || []);
+      if (d.spot) setLiveSpot(d.spot);
+    },
+
+    trade_entered: (d) => {
+      fetchOpenTrades(); fetchStats();
+      pushAlert(
+        `📈 Trade opened | ${d.option_type} ₹${d.strike} | Premium ₹${d.entry_option_price || d.fill_price}`,
+        'success'
+      );
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
     },
     trade_closed: (d) => {
       fetchOpenTrades(); fetchStats(); fetchEquity();
       setPremiumTicks(prev => prev.filter(t => t.id !== d.id));
+<<<<<<< HEAD
       pushAlert(`Trade closed | ₹${d.pnl > 0 ? '+' : ''}${d.pnl?.toFixed(0)}`, d.pnl > 0 ? 'success' : 'warn');
     },
     partial_booked:  (d) => pushAlert(`📦 Partial +₹${d.partial_pnl?.toFixed(0)} | SL→BE`, 'info'),
@@ -483,6 +719,34 @@ export default function Dashboard() {
     pong:            () => {},
   });
 
+=======
+      pushAlert(
+        `Trade closed | P&L ₹${d.pnl > 0 ? '+' : ''}${d.pnl?.toFixed(0)}`,
+        d.pnl > 0 ? 'success' : 'warn'
+      );
+    },
+    partial_booked: (d) => pushAlert(`📦 Partial +₹${d.partial_pnl?.toFixed(0)} | SL→BE`, 'info'),
+
+    btst_entered: () => { fetchBTST(); pushAlert('🌙 BTST trade entered', 'info'); },
+    btst_closed:  (d) => {
+      fetchBTST(); fetchStats();
+      pushAlert(`🌅 BTST closed ₹${d.pnl > 0 ? '+' : ''}${d.pnl?.toFixed(0)}`, d.pnl > 0 ? 'success' : 'warn');
+    },
+
+    emergency_stop: (d) => {
+      pushAlert('🚨 ' + d.message, 'error');
+      fetchOpenTrades(); fetchBTST();
+      setPremiumTicks([]);
+    },
+    cooldown:       (d) => pushAlert(`⏸ Cooldown ${d.remaining_minutes}m`, 'warn'),
+    daily_reset:    ()  => { fetchStats(); pushAlert('📅 New day — reset', 'info'); },
+    alert:          (d) => { pushAlert(d.message, d.type?.toLowerCase() || 'warn'); setUnreadCount(c => c + 1); },
+    config_updated: ()  => fetchBotStatus(),
+    pong:           () => {},
+  });
+
+  // ── Fetchers ────────────────────────────────────────────────────────────────
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   const fetchBotStatus  = async () => { try { setBotStatus(await api.getBotStatus()); } catch {} };
   const fetchOpenTrades = async () => { try { setOpenTrades(await api.getOpenTrades()); } catch {} };
   const fetchBTST       = async () => { try { setBtst(await api.getBTSTOpen()); } catch {} };
@@ -492,6 +756,7 @@ export default function Dashboard() {
     try { setIndicators(await api.getIndicators(botStatus.symbol || 'NIFTY')); } catch {}
   };
 
+<<<<<<< HEAD
   const checkUpstoxStatus = useCallback(async () => {
     try { setUpstoxStatus(await api.getUpstoxStatus()); } catch {}
   }, []);
@@ -501,6 +766,10 @@ export default function Dashboard() {
       const d = await api.getWsStatus();
       setWsConnected(d.connected || false);
     } catch {}
+=======
+  const checkWsStatus = useCallback(async () => {
+    try { const d = await api.getWsStatus(); setWsConnected(d.connected || false); } catch {}
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   }, []);
 
   const fetchAll = useCallback(async () => {
@@ -511,7 +780,11 @@ export default function Dashboard() {
         api.getNotifications(5, true),
       ]);
       if (s.status === 'fulfilled')     setBotStatus(s.value);
+<<<<<<< HEAD
       if (p.status === 'fulfilled')     { setPrice(p.value); setLiveSpot(p.value?.price || 0); setMarketOpen(p.value?.market_open || false); }
+=======
+      if (p.status === 'fulfilled')     { setPrice(p.value); setLiveSpot(p.value?.price || 0); }
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
       if (ot.status === 'fulfilled')    setOpenTrades(ot.value);
       if (bt.status === 'fulfilled')    setBtst(bt.value);
       if (eq.status === 'fulfilled')    setEquityCurve(eq.value);
@@ -521,14 +794,23 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+<<<<<<< HEAD
   useEffect(() => { checkUpstoxStatus(); const iv = setInterval(checkUpstoxStatus, 60000); return () => clearInterval(iv); }, [checkUpstoxStatus]);
   useEffect(() => { checkWsStatus(); const iv = setInterval(checkWsStatus, 30000); return () => clearInterval(iv); }, [checkWsStatus]);
+=======
+  useEffect(() => {
+    checkWsStatus();
+    const iv = setInterval(checkWsStatus, 30000);
+    return () => clearInterval(iv);
+  }, [checkWsStatus]);
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
   useEffect(() => {
     const iv = setInterval(async () => {
       try {
         const p = await api.getPrice(botStatus.symbol || 'NIFTY');
         setPrice(p);
         if (p?.price) setLiveSpot(p.price);
+<<<<<<< HEAD
         if (p?.market_open !== undefined) setMarketOpen(p.market_open);
       } catch {}
     }, 30000);
@@ -565,6 +847,57 @@ export default function Dashboard() {
     <div className="min-h-screen flex items-center justify-center bg-brand-bg">
       <div className="text-center">
         <div className="w-10 h-10 border-2 border-brand-accent border-t-transparent rounded-full animate-spin mx-auto mb-3"/>
+=======
+      } catch {}
+    }, 60000);
+    return () => clearInterval(iv);
+  }, [botStatus.symbol]);
+
+  // ── Bot actions ─────────────────────────────────────────────────────────────
+  const handleStart = async (sym: string, cap: number, m: string) => {
+    await api.startBot(sym, cap, m);
+    await fetchAll();
+  };
+  const handleStop          = async () => { await api.stopBot();       await fetchAll(); };
+  const handleEmergencyStop = async () => {
+    if (!confirm('🚨 Close ALL positions immediately? This cannot be undone.')) return;
+    await api.emergencyStop();
+    await fetchAll();
+    pushAlert('🚨 Emergency stop executed — all positions closed', 'error');
+  };
+
+  // BTST toggle — optimistic update so UI responds instantly
+  const handleBTSTToggle = async () => {
+    const newVal = !botStatus.btst_enabled;
+
+    // 1. Update UI immediately — no network wait
+    setBotStatus((prev: any) => ({ ...prev, btst_enabled: newVal }));
+    pushAlert(`🌙 BTST ${newVal ? 'ON ✅' : 'OFF'}`, 'info');
+
+    // 2. Save to backend
+    try {
+      await api.updateBotConfig({ btst_enabled: newVal });
+    } catch {
+      // Revert on failure
+      setBotStatus((prev: any) => ({ ...prev, btst_enabled: !newVal }));
+      pushAlert('❌ BTST toggle failed — check connection', 'error');
+      return;
+    }
+
+    // 3. Confirm from server
+    await fetchBotStatus();
+  };
+
+
+  const symbol       = botStatus.symbol || 'NIFTY';
+  const hasLiveTrades = premiumTicks.length > 0;
+
+  // ── Loading ─────────────────────────────────────────────────────────────────
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-brand-bg">
+      <div className="text-center">
+        <div className="w-10 h-10 border-2 border-brand-accent border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
         <p className="text-brand-muted font-mono text-sm">Connecting to Upstox...</p>
       </div>
     </div>
@@ -581,6 +914,7 @@ export default function Dashboard() {
         onBellClick={() => { setShowNotifs(true); setUnreadCount(0); }}
       />
 
+<<<<<<< HEAD
       {/* Live Status Bar */}
       <LiveStatusBar
         botStatus={botStatus}
@@ -590,6 +924,8 @@ export default function Dashboard() {
         marketOpen={marketOpen}
       />
 
+=======
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
       {/* Alert toasts */}
       {alerts.length > 0 && (
         <div className="px-3 pt-2 space-y-1">
@@ -601,19 +937,30 @@ export default function Dashboard() {
         </div>
       )}
 
+<<<<<<< HEAD
       <StatsBar stats={stats}/>
 
       {/* Tab bar */}
+=======
+      <StatsBar stats={stats} />
+
+      {/* ── Tab bar ── */}
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
       <div className="sticky top-0 z-20 bg-brand-bg/95 backdrop-blur border-b border-brand-border">
         <div className="flex overflow-x-auto scrollbar-none">
           {TABS.map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id)}
+<<<<<<< HEAD
               className={`flex-shrink-0 py-2.5 text-xs font-semibold transition-all whitespace-nowrap px-2 min-w-[52px] ${
+=======
+              className={`flex-1 py-2.5 text-xs font-semibold transition-all whitespace-nowrap px-1.5 min-w-0 ${
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
                 activeTab === t.id
                   ? 'text-brand-accent border-b-2 border-brand-accent bg-brand-accent/5'
                   : 'text-brand-muted hover:text-brand-text'
               }`}>
               {t.label}
+<<<<<<< HEAD
               {t.id === 'live' && hasLiveTrades && (
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-green ml-1 animate-pulse align-middle"/>
               )}
@@ -622,17 +969,35 @@ export default function Dashboard() {
               )}
               {t.id === 'debug' && (
                 <span className={`inline-block w-1.5 h-1.5 rounded-full ml-1 align-middle ${wsConnected && wsDataConnected ? 'bg-brand-green' : 'bg-brand-red'}`}/>
+=======
+              {/* Dot indicators */}
+              {t.id === 'live' && hasLiveTrades && (
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-green ml-1 animate-pulse align-middle" />
+              )}
+              {t.id === 'btst' && btst.length > 0 && (
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-yellow ml-1 align-middle" />
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
               )}
             </button>
           ))}
         </div>
       </div>
 
+<<<<<<< HEAD
       <main className="px-3 py-4 max-w-2xl mx-auto space-y-4 pb-10">
 
         {activeTab === 'overview' && (
           <div className="space-y-4 animate-slide-up">
             <PortfolioCard botStatus={botStatus}/>
+=======
+      {/* ── Tab content ── */}
+      <main className="px-3 py-4 max-w-2xl mx-auto space-y-4 pb-10">
+
+        {/* ── OVERVIEW ──────────────────────────────────────────────────── */}
+        {activeTab === 'overview' && (
+          <div className="space-y-4 animate-slide-up">
+            <PortfolioCard botStatus={botStatus} />
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
             <BotControls
               botStatus={botStatus}
               onStart={handleStart}
@@ -640,6 +1005,7 @@ export default function Dashboard() {
               onEmergencyStop={handleEmergencyStop}
               onConfigChange={fetchBotStatus}
             />
+<<<<<<< HEAD
             {hasLiveTrades && <TradeTracker ticks={premiumTicks} currentSpot={liveSpot}/>}
             <EquityCurve data={equityCurve}/>
             {btst.length > 0 && <BTSTPanel btst={btst}/>}
@@ -678,6 +1044,56 @@ export default function Dashboard() {
         {activeTab === 'signals' && (
           <div className="space-y-4 animate-slide-up">
             <MarketStatusPanel symbol={symbol} indicators={indicators}/>
+=======
+            {hasLiveTrades && (
+              <TradeTracker ticks={premiumTicks} currentSpot={liveSpot} />
+            )}
+            <EquityCurve data={equityCurve} />
+            {btst.length > 0 && <BTSTPanel btst={btst} />}
+          </div>
+        )}
+
+        {/* ── LIVE TRADES ───────────────────────────────────────────────── */}
+        {activeTab === 'live' && (
+          <div className="space-y-4 animate-slide-up">
+            <TradeTracker ticks={premiumTicks} currentSpot={liveSpot} />
+            {btst.length > 0 && <BTSTPanel btst={btst} />}
+            <OpenTrades trades={openTrades} currentPrice={price?.price} />
+          </div>
+        )}
+
+        {/* ── OPTIONS CHAIN ─────────────────────────────────────────────── */}
+        {activeTab === 'options' && (
+          <div className="space-y-4 animate-slide-up">
+            {/* Upstox data note */}
+            <div className="bg-brand-surface rounded-xl px-3 py-2 flex items-center gap-2 border border-brand-border">
+              <Activity size={12} className="text-brand-accent flex-shrink-0" />
+              <p className="text-brand-muted text-xs font-mono">
+                Live chain from Upstox API · Expiries &amp; lot sizes from instruments API · Auto-refresh 15s
+              </p>
+            </div>
+            <OptionsChain symbol={symbol} spot={liveSpot || price?.price} />
+          </div>
+        )}
+
+        {/* ── CHART ─────────────────────────────────────────────────────── */}
+        {activeTab === 'chart' && (
+          <div className="space-y-4 animate-slide-up">
+            <MarketChart symbol={symbol} />
+            <MarketStatusPanel symbol={symbol} indicators={indicators} />
+            <IndicatorsPanel
+              indicators={indicators}
+              onRefresh={fetchIndicators}
+              symbol={symbol}
+            />
+          </div>
+        )}
+
+        {/* ── SIGNALS ───────────────────────────────────────────────────── */}
+        {activeTab === 'signals' && (
+          <div className="space-y-4 animate-slide-up">
+            <MarketStatusPanel symbol={symbol} indicators={indicators} />
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
             <SignalCard
               signal={signal}
               symbol={symbol}
@@ -688,6 +1104,10 @@ export default function Dashboard() {
           </div>
         )}
 
+<<<<<<< HEAD
+=======
+        {/* ── BTST ──────────────────────────────────────────────────────── */}
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
         {activeTab === 'btst' && (
           <BTSTTab
             botStatus={botStatus}
@@ -697,6 +1117,7 @@ export default function Dashboard() {
           />
         )}
 
+<<<<<<< HEAD
         {activeTab === 'analytics' && (
           <div className="space-y-4 animate-slide-up">
             <StrategyAnalytics/>
@@ -712,6 +1133,20 @@ export default function Dashboard() {
       </main>
 
       {showNotifs && <NotificationsPanel onClose={() => setShowNotifs(false)}/>}
+=======
+        {/* ── ANALYTICS ─────────────────────────────────────────────────── */}
+        {activeTab === 'analytics' && (
+          <div className="space-y-4 animate-slide-up">
+            <StrategyAnalytics />
+            <EquityCurve data={equityCurve} />
+            <TradeHistory />
+          </div>
+        )}
+
+      </main>
+
+      {showNotifs && <NotificationsPanel onClose={() => setShowNotifs(false)} />}
+>>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
     </div>
   );
 }
