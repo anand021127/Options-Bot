@@ -619,7 +619,6 @@ export default function Dashboard() {
     setTimeout(() => setAlerts(a => a.slice(0, -1)), 9000);
   };
 
-  // WebSocket handlers
   // ── WebSocket handlers ──────────────────────────────────────────────────────
   const { connected } = useWebSocket({
     bot_status:       (d) => setBotStatus((p: any) => ({ ...p, ...d })),
@@ -631,53 +630,30 @@ export default function Dashboard() {
     },
     trade_entered: (d) => {
       fetchOpenTrades(); fetchStats();
-      pushAlert(`📈 Trade | ${d.option_type} ₹${d.strike} | ₹${d.entry_option_price || d.fill_price}`, 'success');
-
-    // Real-time option premiums from Upstox — powers TradeTracker
-    premium_tick: (d) => {
-      setPremiumTicks(d.ticks || []);
-      if (d.spot) setLiveSpot(d.spot);
-    },
-
-    trade_entered: (d) => {
-      fetchOpenTrades(); fetchStats();
-      pushAlert(
-        `📈 Trade opened | ${d.option_type} ₹${d.strike} | Premium ₹${d.entry_option_price || d.fill_price}`,
-        'success'
-      );
+      pushAlert(`📈 Trade opened | ${d.option_type} ₹${d.strike} | Premium ₹${d.entry_option_price || d.fill_price}`, 'success');
     },
     trade_closed: (d) => {
       fetchOpenTrades(); fetchStats(); fetchEquity();
       setPremiumTicks(prev => prev.filter(t => t.id !== d.id));
-      pushAlert(`Trade closed | ₹${d.pnl > 0 ? '+' : ''}${d.pnl?.toFixed(0)}`, d.pnl > 0 ? 'success' : 'warn');
+      pushAlert(`Trade closed | P&L ₹${d.pnl > 0 ? '+' : ''}${d.pnl?.toFixed(0)}`, d.pnl > 0 ? 'success' : 'warn');
     },
-    partial_booked:  (d) => pushAlert(`📦 Partial +₹${d.partial_pnl?.toFixed(0)} | SL→BE`, 'info'),
-    btst_entered:    () => { fetchBTST(); pushAlert('🌙 BTST entered', 'info'); },
-    btst_closed:     (d) => { fetchBTST(); fetchStats(); pushAlert(`🌅 BTST ₹${d.pnl > 0 ? '+' : ''}${d.pnl?.toFixed(0)}`, d.pnl > 0 ? 'success' : 'warn'); },
-    emergency_stop:  (d) => { pushAlert('🚨 ' + d.message, 'error'); fetchOpenTrades(); fetchBTST(); setPremiumTicks([]); },
+    partial_booked: (d) => pushAlert(`📦 Partial +₹${d.partial_pnl?.toFixed(0)} | SL→BE`, 'info'),
+    btst_entered: () => { fetchBTST(); pushAlert('🌙 BTST trade entered', 'info'); },
+    btst_closed:  (d) => {
+      fetchBTST(); fetchStats();
+      pushAlert(`🌅 BTST closed ₹${d.pnl > 0 ? '+' : ''}${d.pnl?.toFixed(0)}`, d.pnl > 0 ? 'success' : 'warn');
+    },
+    emergency_stop: (d) => {
+      pushAlert('🚨 ' + d.message, 'error');
+      fetchOpenTrades(); fetchBTST();
+      setPremiumTicks([]);
+    },
     cooldown:        (d) => pushAlert(`⏸ Cooldown ${d.remaining_minutes}m`, 'warn'),
     daily_reset:     ()  => { fetchStats(); pushAlert('📅 New day', 'info'); },
     alert:           (d) => { pushAlert(d.message, d.type?.toLowerCase() || 'warn'); setUnreadCount(c => c + 1); },
     config_updated:  ()  => fetchBotStatus(),
     pong:            () => {},
   });
-
-      pushAlert(
-        `Trade closed | P&L ₹${d.pnl > 0 ? '+' : ''}${d.pnl?.toFixed(0)}`,
-        d.pnl > 0 ? 'success' : 'warn'
-      );
-    },
-    partial_booked: (d) => pushAlert(`📦 Partial +₹${d.partial_pnl?.toFixed(0)} | SL→BE`, 'info'),
-
-    btst_entered: () => { fetchBTST(); pushAlert('🌙 BTST trade entered', 'info'); },
-    btst_closed:  (d) => {
-      fetchBTST(); fetchStats();
-      pushAlert(`🌅 BTST closed ₹${d.pnl > 0 ? '+' : ''}${d.pnl?.toFixed(0)}`, d.pnl > 0 ? 'success' : 'warn');
-    },
-
-    emergency_stop: (d) => {
-      pushAlert('🚨 ' + d.message, 'error');
-      fetchOpenTrades(); fetchBTST();
       setPremiumTicks([]);
     },
     cooldown:       (d) => pushAlert(`⏸ Cooldown ${d.remaining_minutes}m`, 'warn'),
@@ -773,46 +749,6 @@ export default function Dashboard() {
 
   const symbol       = botStatus.symbol || 'NIFTY';
   const hasLiveTrades = premiumTicks.length > 0;
-
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-brand-bg">
-      <div className="text-center">
-        <div className="w-10 h-10 border-2 border-brand-accent border-t-transparent rounded-full animate-spin mx-auto mb-3"/>
-      } catch {}
-    }, 60000);
-    return () => clearInterval(iv);
-  }, [botStatus.symbol]);
-
-  // ── Bot actions ─────────────────────────────────────────────────────────────
-  const handleStart = async (sym: string, cap: number, m: string) => {
-    await api.startBot(sym, cap, m);
-    await fetchAll();
-  };
-  const handleStop          = async () => { await api.stopBot();       await fetchAll(); };
-  const handleEmergencyStop = async () => {
-    if (!confirm('🚨 Close ALL positions immediately? This cannot be undone.')) return;
-    await api.emergencyStop();
-    await fetchAll();
-    pushAlert('🚨 Emergency stop executed — all positions closed', 'error');
-  };
-
-  // BTST toggle — optimistic update so UI responds instantly
-  const handleBTSTToggle = async () => {
-    const newVal = !botStatus.btst_enabled;
-
-    // 1. Update UI immediately — no network wait
-    setBotStatus((prev: any) => ({ ...prev, btst_enabled: newVal }));
-    pushAlert(`🌙 BTST ${newVal ? 'ON ✅' : 'OFF'}`, 'info');
-
-    // 2. Save to backend
-    try {
-      await api.updateBotConfig({ btst_enabled: newVal });
-    } catch {
-      // Revert on failure
-      setBotStatus((prev: any) => ({ ...prev, btst_enabled: !newVal }));
-      pushAlert('❌ BTST toggle failed — check connection', 'error');
-      return;
-    }
 
     // 3. Confirm from server
     await fetchBotStatus();
