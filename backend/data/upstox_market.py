@@ -376,10 +376,6 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
         logger.error(f"Instruments blocked — token issue: {e}")
         return False
 
-    except Exception as e:
-        logger.error(f"Instruments load error for {sym}: {e}")
-        return False
-
 
 async def get_available_expiries(symbol: str) -> List[str]:
     """Get sorted expiry dates from Upstox instruments cache."""
