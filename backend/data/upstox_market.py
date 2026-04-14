@@ -362,17 +362,6 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
                 f"Check field names above. "
                 f"Raw sample: {str(raw_list[0])}"
             )
-                "symbol": sym,
-                "expiry": expiry,
-                "strike": strike,
-                "option_type": opt_type,
-                "lot_size": lot_size,
-                "exchange": inst.get("exchange", "NSE"),
-            }
-
-            count += 1
-
-            # ✅ FIX END
 
         _instruments_loaded[sym] = True
         logger.info(f"✅ Instruments: {sym} → {count} active contracts loaded")
