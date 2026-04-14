@@ -159,26 +159,20 @@ async def subscribe_option_live(instrument_key: str):
 
 async def load_instruments(symbol: str = "NIFTY") -> bool:
     """
-<<<<<<< HEAD
     Load F&O instrument metadata from Upstox /option/contract.
     Handles ALL known Upstox response field name variants.
     Logs raw response sample for debugging when 0 contracts found.
-=======
     Load F&O instrument metadata from Upstox.
     Gets real lot_size, expiry, instrument_key for every contract.
     Returns True if at least one contract loaded.
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
     """
     global _instruments_cache, _instruments_loaded
 
     if _instruments_loaded.get(symbol.upper()):
         return True
 
-<<<<<<< HEAD
     sym  = symbol.upper()
-=======
     sym = symbol.upper()
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
     ikey = INDEX_KEYS.get(sym)
     if not ikey:
         logger.error(f"No index key for {sym}")
@@ -186,10 +180,7 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
 
     try:
         token = await _get_token()
-<<<<<<< HEAD
-=======
 
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
         async with httpx.AsyncClient(timeout=30) as c:
             resp = await c.get(
                 f"{UPSTOX_BASE}/option/contract",
@@ -197,7 +188,6 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
                 headers=_headers(token),
             )
 
-<<<<<<< HEAD
         logger.info(f"Instruments API: HTTP {resp.status_code} for {sym}")
 
         if resp.status_code != 200:
@@ -226,7 +216,6 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
         skipped_expired  = 0
         skipped_no_type  = 0
         skipped_missing  = 0
-=======
         logger.info(f"Instruments API: {resp.status_code} for {sym}")
 
         if resp.status_code != 200:
@@ -243,13 +232,11 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
 
         today_str = date.today().isoformat()
         count = 0
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
 
         for inst in raw_list:
             if not isinstance(inst, dict):
                 continue
 
-<<<<<<< HEAD
             # ── Field extraction with ALL known Upstox variants ──────────────
             expiry = (
                 inst.get("expiry") or
@@ -314,7 +301,6 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
                 continue
             if opt_type not in ("CE", "PE"):
                 skipped_no_type += 1
-=======
             expiry_raw = inst.get("expiry") or inst.get("expiry_date") or ""
             inst_key   = inst.get("instrument_key") or inst.get("key") or ""
             lot_size   = inst.get("lot_size") or inst.get("lotSize")
@@ -349,13 +335,11 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
                 strike = float(strike)
                 lot_size = int(lot_size)
             except:
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
                 continue
 
             _instruments_cache[inst_key] = {
                 "instrument_key": inst_key,
                 "trading_symbol": trading,
-<<<<<<< HEAD
                 "symbol":         sym,
                 "expiry":         expiry,
                 "strike":         float(strike),
@@ -378,7 +362,6 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
                 f"Check field names above. "
                 f"Raw sample: {str(raw_list[0])}"
             )
-=======
                 "symbol": sym,
                 "expiry": expiry,
                 "strike": strike,
@@ -393,23 +376,19 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
 
         _instruments_loaded[sym] = True
         logger.info(f"✅ Instruments: {sym} → {count} active contracts loaded")
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
 
         return count > 0
 
     except RuntimeError as e:
-<<<<<<< HEAD
         logger.error(f"Instruments blocked — {e}")
         return False
     except Exception as e:
         logger.error(f"Instruments load error for {sym}: {e}", exc_info=True)
-=======
         logger.error(f"Instruments blocked — token issue: {e}")
         return False
 
     except Exception as e:
         logger.error(f"Instruments load error for {sym}: {e}")
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
         return False
 
 

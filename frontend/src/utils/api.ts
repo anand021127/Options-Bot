@@ -79,12 +79,9 @@ export const api = {
 
   // ── Health ────────────────────────────────────────────────────────────────
   health: () => req('/health'),
-};
-<<<<<<< HEAD
 
   // ── Debug ──────────────────────────────────────────────────────────────────
   debugUpstox: (endpoint: string, symbol = 'NIFTY') =>
     req(`/api/debug/upstox/${endpoint}?symbol=${symbol}`),
   getDebugLogs: () => req('/api/debug/logs'),
-=======
->>>>>>> 32af4602551c10127de1465992ac0b38963dcc92
+};
