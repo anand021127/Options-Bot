@@ -760,24 +760,34 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
         to_dt   = today.strftime("%Y-%m-%d")
         from_dt = (today - timedelta(days=10 if is_intraday else 30)).strftime("%Y-%m-%d")
 
+        encoded_key = _enc(ikey)
+        url_candidates = []
         if is_intraday:
-            # Upstox intraday endpoint: /historical-candle/intraday/{key}/{interval}
-            # instrument_key must be URL-encoded in the path
-            encoded_key = _enc(ikey)
-            url = f"{UPSTOX_BASE}/historical-candle/intraday/{encoded_key}/{upstox_iv}"
+            # Try both possible Upstox URL orders for intraday candles.
+            url_candidates = [
+                f"{UPSTOX_BASE}/historical-candle/intraday/{encoded_key}/{upstox_iv}",
+                f"{UPSTOX_BASE}/historical-candle/intraday/{upstox_iv}/{encoded_key}",
+            ]
         else:
-            # Daily endpoint: /historical-candle/{key}/{interval}/{to}/{from}
-            encoded_key = _enc(ikey)
-            url = f"{UPSTOX_BASE}/historical-candle/{encoded_key}/{upstox_iv}/{to_dt}/{from_dt}"
+            # Try both possible daily URL orders for historical candles.
+            url_candidates = [
+                f"{UPSTOX_BASE}/historical-candle/{encoded_key}/{upstox_iv}/{to_dt}/{from_dt}",
+                f"{UPSTOX_BASE}/historical-candle/{upstox_iv}/{encoded_key}/{to_dt}/{from_dt}",
+            ]
 
+        resp = None
         async with httpx.AsyncClient(timeout=20) as c:
-            resp = await c.get(url, headers=_headers(token))
+            for url in url_candidates:
+                resp = await c.get(url, headers=_headers(token))
+                if resp.status_code == 200:
+                    break
+                logger.warning(f"OHLCV candidate failed {resp.status_code} for {sym} {upstox_iv}: {url} | {resp.text[:200]}")
 
-        if resp.status_code != 200:
-            logger.error(f"OHLCV {resp.status_code} for {sym} {upstox_iv}: {resp.text[:200]}")
+        if resp is None or resp.status_code != 200:
+            logger.error(f"OHLCV {resp.status_code if resp else 'NO_RESP'} for {sym} {upstox_iv}")
             return None
 
-        body    = resp.json()
+        body = resp.json()
         candles = body.get("data", {}).get("candles", [])
 
         if not candles:
