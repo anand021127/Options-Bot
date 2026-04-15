@@ -736,8 +736,8 @@ _INTERVAL_MAP = {
 
 async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> Optional[pd.DataFrame]:
     """
-    Fetch OHLCV candles from Upstox.
-    Uses /historical-candle/intraday/ for intraday intervals.
+    Fetch OHLCV candles from Upstox via /market-quote/ohlc.
+    Uses interval parameter for both intraday and daily candles.
     Returns None if failed — signal engine will block trade.
     """
     cache_key = f"ohlcv_{symbol}_{period}_{interval}"
@@ -752,77 +752,64 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
         return None
 
     upstox_iv = _INTERVAL_MAP.get(interval, "5minute")
-    is_intraday = upstox_iv != "1day"
 
     try:
         token = await _get_token()
-        today   = date.today()
-        to_dt   = today.strftime("%Y-%m-%d")
-        from_dt = (today - timedelta(days=10 if is_intraday else 30)).strftime("%Y-%m-%d")
-
-        # Try multiple endpoint + query param combinations with proper URL formatting
-        attempts = []
-        if is_intraday:
-            # For intraday: try different endpoint paths with query params
-            attempts = [
-                (f"{UPSTOX_BASE}/historical-candle/intraday", {"instrument_key": ikey, "interval": upstox_iv}),
-                (f"{UPSTOX_BASE}/market-quote/intraday", {"instrument_key": ikey, "interval": upstox_iv}),
-            ]
-        else:
-            # For daily: include date params
-            attempts = [
-                (f"{UPSTOX_BASE}/historical-candle", {"instrument_key": ikey, "interval": upstox_iv, "to_date": to_dt, "from_date": from_dt}),
-                (f"{UPSTOX_BASE}/market-quote/historical", {"instrument_key": ikey, "interval": upstox_iv, "to_date": to_dt, "from_date": from_dt}),
-            ]
-
+        
+        # Use /market-quote/ohlc endpoint with interval param
+        # This endpoint works for both intraday (5minute, 15minute, etc) and daily (1day)
+        params = {
+            "instrument_key": ikey,
+            "interval": upstox_iv,
+        }
+        
         resp = None
         async with httpx.AsyncClient(timeout=20) as c:
-            for url, params in attempts:
-                try:
-                    resp = await c.get(url, params=params, headers=_headers(token))
-                    if resp.status_code == 200:
-                        break
-                    logger.warning(f"OHLCV attempt failed {resp.status_code} for {sym} {upstox_iv}: {url} + {params} | {resp.text[:200]}")
-                except Exception as e:
-                    logger.warning(f"OHLCV attempt error for {sym}: {e}")
-
-        if resp is None or resp.status_code != 200:
-            logger.error(f"OHLCV {resp.status_code if resp else 'NO_RESP'} for {sym} {upstox_iv}. All attempts failed.")
+            resp = await c.get(
+                f"{UPSTOX_BASE}/market-quote/ohlc",
+                params=params,
+                headers=_headers(token),
+            )
+            
+        if resp.status_code != 200:
+            logger.error(f"OHLCV failed {resp.status_code} for {sym} {upstox_iv}: {resp.text[:300]}")
             return None
 
         body = resp.json()
         
-        # Try multiple response structure variants
-        candles = None
+        # /market-quote/ohlc returns: {"data": {instrument_key: {ohlc: {o, h, l, c}, ltp, ...}}}
+        data_dict = body.get("data", {})
         
-        # Try nested structure: data.candles
-        if isinstance(body.get("data"), dict):
-            candles = body.get("data", {}).get("candles", [])
+        # Get OHLC for our instrument
+        instr_data = data_dict.get(ikey) or (data_dict.get(list(data_dict.keys())[0]) if data_dict else None)
         
-        # Try flat data array
-        if not candles and isinstance(body.get("data"), list):
-            candles = body.get("data", [])
-        
-        # Try direct candles key
-        if not candles and isinstance(body.get("candles"), list):
-            candles = body.get("candles", [])
-
-        if not candles:
-            logger.error(f"❌ OHLCV empty response for {sym} {upstox_iv}. Response keys: {list(body.keys())} | Sample: {str(body)[:300]}")
+        if not instr_data:
+            logger.error(f"OHLCV no data for {sym}. Response keys: {list(body.keys())}")
             return None
-
-        # Upstox candle format: [timestamp, open, high, low, close, volume, oi]
-        df = pd.DataFrame(candles, columns=["timestamp", "open", "high", "low", "close", "volume", "oi"])
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
-        df.set_index("timestamp", inplace=True)
-        df.sort_index(inplace=True)
+        
+        ohlc = instr_data.get("ohlc", {})
+        if not ohlc:
+            logger.error(f"OHLCV no OHLC field for {sym}. Instr keys: {list(instr_data.keys())}")
+            return None
+        
+        # /market-quote/ohlc returns single OHLC bar, not historical candles
+        # Convert to DataFrame for consistency with signal engine
+        # Format: {o: open, h: high, l: low, c: close, ...}
+        df = pd.DataFrame([{
+            "open": float(ohlc.get("o", 0)),
+            "high": float(ohlc.get("h", 0)),
+            "low": float(ohlc.get("l", 0)),
+            "close": float(ohlc.get("c", 0)),
+            "volume": int(instr_data.get("volume", 0)),
+        }], index=[pd.Timestamp.now(tz=IST)])
+        
         df = df[["open", "high", "low", "close", "volume"]].astype(float)
-
+        
         if df.empty:
             return None
-
+        
         _ohlcv_cache[cache_key] = {"data": df, "ts": datetime.now(IST).isoformat()}
-        logger.info(f"✅ OHLCV: {sym} {upstox_iv} → {len(df)} bars")
+        logger.info(f"✅ OHLCV: {sym} {upstox_iv} → latest bar (note: /market-quote/ohlc returns 1 candle only)")
         return df
 
     except RuntimeError as e:
