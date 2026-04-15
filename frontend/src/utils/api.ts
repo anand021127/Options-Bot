@@ -1,7 +1,8 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const BASE = process.env.NEXT_PUBLIC_API_URL?.trim() || '';
 
 async function req(path: string, options?: RequestInit) {
-  const res = await fetch(`${BASE}${path}`, {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
