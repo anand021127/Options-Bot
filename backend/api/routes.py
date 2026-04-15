@@ -3,8 +3,10 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
+import httpx
 from loguru import logger
 
+from api.upstox_auth import get_upstox_token
 from core.database import (
     get_open_trades, get_trade_history, get_stats, get_equity_curve,
     get_config, set_config, get_all_config,
@@ -328,3 +330,103 @@ async def ws_status():
         return get_ws_status()
     except Exception as e:
         return {"connected": False, "error": str(e)}
+
+
+@router.get("/debug/logs")
+async def debug_logs():
+    from data.upstox_market import _instruments_cache, _instruments_loaded, _price_store
+
+    token = await get_upstox_token()
+    ws = get_ws_status()
+    return {
+        "upstox_token": "SET" if token else "MISSING",
+        "data_connected": ws.get("connected", False),
+        "market_open": is_market_open(),
+        "instruments_count": len(_instruments_cache),
+        "instruments_loaded": dict(_instruments_loaded),
+        "prices_cached": _price_store,
+        "subscribed_count": ws.get("subscribed_count", 0),
+        "ws_status": ws,
+    }
+
+
+@router.get("/debug/upstox/{endpoint}")
+async def debug_upstox(endpoint: str, symbol: str = "NIFTY"):
+    endpoint = endpoint.lower()
+    if endpoint not in {"profile", "ltp", "contract", "chain", "ohlcv"}:
+        raise HTTPException(404, "Unknown debug endpoint")
+
+    from data.upstox_market import load_instruments, get_available_expiries
+
+    token = await get_upstox_token()
+    if not token:
+        raise HTTPException(401, "No Upstox token available. Please login via the dashboard.")
+
+    if endpoint == "profile":
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://api.upstox.com/v2/user/profile",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        body = resp.json() if resp.content else {}
+        return {
+            "status_code": resp.status_code,
+            "sample_keys": list(body.keys()),
+            "sample_item": body,
+        }
+
+    if endpoint == "ltp":
+        data = await fetch_live_price(symbol)
+        if not data:
+            raise HTTPException(503, f"Live price unavailable for {symbol}")
+        return {
+            "status_code": 200,
+            "sample_item": data,
+            "sample_keys": list(data.keys()),
+        }
+
+    if endpoint == "contract":
+        loaded = await load_instruments(symbol)
+        sample = None
+        total = 0
+        if loaded:
+            from data.upstox_market import _instruments_cache
+            sample = next(iter(_instruments_cache.values()), None)
+            total = len(_instruments_cache)
+        return {
+            "status_code": 200 if loaded else 503,
+            "total_items": total,
+            "sample_keys": list(sample.keys()) if sample else [],
+            "sample_item": sample,
+        }
+
+    if endpoint == "chain":
+        expiries = await get_available_expiries(symbol)
+        if not expiries:
+            raise HTTPException(503, f"No expiry data available for {symbol}")
+        chain_data = await fetch_options_chain(symbol, expiries[0])
+        if not chain_data:
+            raise HTTPException(503, f"Option chain unavailable for {symbol} {expiries[0]}")
+        sample = chain_data.get("calls") or chain_data.get("puts") or []
+        return {
+            "status_code": 200,
+            "total_items": len(sample),
+            "sample_keys": list(chain_data.keys()),
+            "sample_item": {
+                "symbol": chain_data.get("symbol"),
+                "expiry": chain_data.get("expiry"),
+                "spot": chain_data.get("spot"),
+            },
+        }
+
+    if endpoint == "ohlcv":
+        data = await fetch_ohlcv(symbol, period="5d", interval="5m")
+        if data is None:
+            raise HTTPException(503, f"OHLCV unavailable for {symbol}")
+        sample = data.reset_index().head(1).to_dict("records")[0] if not data.empty else {}
+        return {
+            "status_code": 200,
+            "total_items": len(data),
+            "sample_keys": list(sample.keys()),
+            "sample_item": sample,
+        }
