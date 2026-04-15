@@ -160,19 +160,15 @@ async def subscribe_option_live(instrument_key: str):
 async def load_instruments(symbol: str = "NIFTY") -> bool:
     """
     Load F&O instrument metadata from Upstox /option/contract.
-    Handles ALL known Upstox response field name variants.
-    Logs raw response sample for debugging when 0 contracts found.
-    Load F&O instrument metadata from Upstox.
-    Gets real lot_size, expiry, instrument_key for every contract.
+    Handles all known Upstox response field name variants and normalises expiry formats.
     Returns True if at least one contract loaded.
     """
     global _instruments_cache, _instruments_loaded
 
-    if _instruments_loaded.get(symbol.upper()):
+    sym = symbol.upper()
+    if _instruments_loaded.get(sym):
         return True
 
-    sym  = symbol.upper()
-    sym = symbol.upper()
     ikey = INDEX_KEYS.get(sym)
     if not ikey:
         logger.error(f"No index key for {sym}")
@@ -180,7 +176,6 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
 
     try:
         token = await _get_token()
-
         async with httpx.AsyncClient(timeout=30) as c:
             resp = await c.get(
                 f"{UPSTOX_BASE}/option/contract",
@@ -189,69 +184,58 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
             )
 
         logger.info(f"Instruments API: HTTP {resp.status_code} for {sym}")
-
         if resp.status_code != 200:
             logger.error(f"Instruments failed: {resp.status_code} | {resp.text[:500]}")
             return False
 
-        body     = resp.json()
+        body = resp.json()
         raw_list = body.get("data", [])
+        if not isinstance(raw_list, list):
+            raw_list = []
 
         if not raw_list:
             logger.error(
-                f"Instruments API empty data for {sym}. "
-                f"Body keys: {list(body.keys())} | "
-                f"Sample: {str(body)[:400]}"
+                f"Instruments API empty data for {sym}. Body keys: {list(body.keys())} | Sample: {str(body)[:400]}"
             )
             _instruments_loaded[sym] = True
             return False
 
-        # Log first item to understand actual field names
-        if raw_list:
-            logger.info(f"Instrument sample fields: {list(raw_list[0].keys())}")
-            logger.info(f"Instrument sample: {str(raw_list[0])[:300]}")
+        logger.info(f"Instrument sample fields: {list(raw_list[0].keys())}")
+        logger.info(f"Instrument sample: {str(raw_list[0])[:300]}")
 
-        today_str = date.today().isoformat()
-        count     = 0
-        skipped_expired  = 0
-        skipped_no_type  = 0
-        skipped_missing  = 0
-        logger.info(f"Instruments API: {resp.status_code} for {sym}")
-
-        if resp.status_code != 200:
-            logger.error(f"Instruments failed: {resp.status_code} | {resp.text[:400]}")
-            return False
-
-        body = resp.json()
-        raw_list = body.get("data", [])
-
-        if not raw_list:
-            logger.warning(f"Instruments API returned empty data for {sym}")
-            _instruments_loaded[sym] = True
-            return False
-
-        today_str = date.today().isoformat()
+        today = date.today()
         count = 0
+        skipped_expired = 0
+        skipped_no_type = 0
+        skipped_missing = 0
 
         for inst in raw_list:
             if not isinstance(inst, dict):
                 continue
 
-            # ── Field extraction with ALL known Upstox variants ──────────────
             expiry = (
                 inst.get("expiry") or
                 inst.get("expiry_date") or
                 inst.get("expiryDate") or
                 ""
             )
-            # Normalise expiry: some versions return "13Apr2026" or "2026-04-13"
-            if expiry and len(expiry) == 9 and expiry[2].isalpha():
-                # e.g. "13Apr2026" → convert to ISO
-                try:
-                    from datetime import datetime as dt
-                    expiry = dt.strptime(expiry, "%d%b%Y").strftime("%Y-%m-%d")
-                except Exception:
-                    pass
+            expiry = str(expiry).strip()
+            expiry_dt = None
+            if expiry:
+                if len(expiry) == 9 and expiry[2].isalpha():
+                    try:
+                        expiry_dt = datetime.strptime(expiry, "%d%b%Y")
+                    except Exception:
+                        expiry_dt = None
+                else:
+                    try:
+                        expiry_dt = datetime.fromisoformat(expiry.replace("Z", ""))
+                    except Exception:
+                        expiry_dt = None
+
+            if not expiry_dt or expiry_dt.date() < today:
+                skipped_expired += 1
+                continue
 
             inst_key = (
                 inst.get("instrument_key") or
@@ -270,18 +254,31 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
                 inst.get("strikePrice") or
                 inst.get("strike")
             )
-            # option_type: Upstox returns "CE"/"PE" but some older formats return "call"/"put"
             raw_type = (
                 inst.get("option_type") or
                 inst.get("optionType") or
                 inst.get("instrument_type") or
                 ""
-            ).strip()
-            opt_type = (
-                "CE" if raw_type.upper() in ("CE", "CALL", "C") else
-                "PE" if raw_type.upper() in ("PE", "PUT", "P") else
-                raw_type.upper()
             )
+            opt_type = str(raw_type).strip().upper()
+            if opt_type in {"CALL", "C"}:
+                opt_type = "CE"
+            elif opt_type in {"PUT", "P"}:
+                opt_type = "PE"
+
+            if not inst_key or not lot_size or strike is None or strike == "" or opt_type not in {"CE", "PE"}:
+                skipped_missing += 1
+                if opt_type not in {"CE", "PE"}:
+                    skipped_no_type += 1
+                continue
+
+            try:
+                strike = float(str(strike))
+                lot_size = int(float(str(lot_size)))
+            except Exception:
+                skipped_missing += 1
+                continue
+
             trading = (
                 inst.get("trading_symbol") or
                 inst.get("tradingSymbol") or
@@ -289,62 +286,14 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
                 ""
             )
 
-            # ── Filters ──────────────────────────────────────────────────────
-            if not expiry or expiry < today_str:
-                skipped_expired += 1
-                continue
-            if not inst_key:
-                skipped_missing += 1
-                continue
-            if not lot_size or strike is None:
-                skipped_missing += 1
-                continue
-            if opt_type not in ("CE", "PE"):
-                skipped_no_type += 1
-            expiry_raw = inst.get("expiry") or inst.get("expiry_date") or ""
-            inst_key   = inst.get("instrument_key") or inst.get("key") or ""
-            lot_size   = inst.get("lot_size") or inst.get("lotSize")
-            strike     = inst.get("strike_price") or inst.get("strike")
-            opt_type   = inst.get("option_type") or inst.get("optionType") or ""
-            trading    = inst.get("trading_symbol") or inst.get("tradingSymbol") or ""
-
-            # Fix expiry parsing
-            try:
-                expiry_dt = datetime.fromisoformat(str(expiry_raw).replace("Z", ""))
-                expiry = expiry_dt.date().isoformat()
-            except:
-                continue
-
-            if expiry_dt.date() < date.today():
-                continue
-
-            # Fix option type
-            opt_type = str(opt_type).upper()
-
-            if opt_type in ["CALL", "CE"]:
-                opt_type = "CE"
-            elif opt_type in ["PUT", "PE"]:
-                opt_type = "PE"
-            else:
-                continue
-
-            if not inst_key or not lot_size or strike is None:
-                continue
-
-            try:
-                strike = float(strike)
-                lot_size = int(lot_size)
-            except:
-                continue
-
             _instruments_cache[inst_key] = {
                 "instrument_key": inst_key,
                 "trading_symbol": trading,
                 "symbol":         sym,
-                "expiry":         expiry,
-                "strike":         float(strike),
+                "expiry":         expiry_dt.date().isoformat(),
+                "strike":         strike,
                 "option_type":    opt_type,
-                "lot_size":       int(float(lot_size)),
+                "lot_size":       lot_size,
                 "exchange":       inst.get("exchange", "NSE"),
             }
             count += 1
@@ -359,13 +308,10 @@ async def load_instruments(symbol: str = "NIFTY") -> bool:
         if count == 0 and raw_list:
             logger.error(
                 f"All {len(raw_list)} contracts were filtered out for {sym}! "
-                f"Check field names above. "
-                f"Raw sample: {str(raw_list[0])}"
+                f"Check field names above. Raw sample: {str(raw_list[0])}"
             )
 
-        _instruments_loaded[sym] = True
         logger.info(f"✅ Instruments: {sym} → {count} active contracts loaded")
-
         return count > 0
 
     except RuntimeError as e:
