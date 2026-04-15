@@ -760,42 +760,55 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
         to_dt   = today.strftime("%Y-%m-%d")
         from_dt = (today - timedelta(days=10 if is_intraday else 30)).strftime("%Y-%m-%d")
 
-        encoded_key = _enc(ikey)
-        url_candidates = []
+        # Try multiple endpoint + query param combinations with proper URL formatting
+        attempts = []
         if is_intraday:
-            # Try both possible Upstox URL orders for intraday candles.
-            url_candidates = [
-                f"{UPSTOX_BASE}/historical-candle/intraday/{encoded_key}/{upstox_iv}",
-                f"{UPSTOX_BASE}/historical-candle/intraday/{upstox_iv}/{encoded_key}",
+            # For intraday: try different endpoint paths with query params
+            attempts = [
+                (f"{UPSTOX_BASE}/historical-candle/intraday", {"instrument_key": ikey, "interval": upstox_iv}),
+                (f"{UPSTOX_BASE}/market-quote/intraday", {"instrument_key": ikey, "interval": upstox_iv}),
             ]
         else:
-            # Try both possible daily URL orders for historical candles.
-            url_candidates = [
-                f"{UPSTOX_BASE}/historical-candle/{encoded_key}/{upstox_iv}/{to_dt}/{from_dt}",
-                f"{UPSTOX_BASE}/historical-candle/{upstox_iv}/{encoded_key}/{to_dt}/{from_dt}",
+            # For daily: include date params
+            attempts = [
+                (f"{UPSTOX_BASE}/historical-candle", {"instrument_key": ikey, "interval": upstox_iv, "to_date": to_dt, "from_date": from_dt}),
+                (f"{UPSTOX_BASE}/market-quote/historical", {"instrument_key": ikey, "interval": upstox_iv, "to_date": to_dt, "from_date": from_dt}),
             ]
 
         resp = None
         async with httpx.AsyncClient(timeout=20) as c:
-            for url in url_candidates:
-                resp = await c.get(url, headers=_headers(token))
-                if resp.status_code == 200:
-                    break
-                logger.warning(f"OHLCV candidate failed {resp.status_code} for {sym} {upstox_iv}: {url} | {resp.text[:200]}")
+            for url, params in attempts:
+                try:
+                    resp = await c.get(url, params=params, headers=_headers(token))
+                    if resp.status_code == 200:
+                        break
+                    logger.warning(f"OHLCV attempt failed {resp.status_code} for {sym} {upstox_iv}: {url} + {params} | {resp.text[:200]}")
+                except Exception as e:
+                    logger.warning(f"OHLCV attempt error for {sym}: {e}")
 
         if resp is None or resp.status_code != 200:
-            logger.error(f"OHLCV {resp.status_code if resp else 'NO_RESP'} for {sym} {upstox_iv}")
+            logger.error(f"OHLCV {resp.status_code if resp else 'NO_RESP'} for {sym} {upstox_iv}. All attempts failed.")
             return None
 
         body = resp.json()
-        candles = body.get("data", {}).get("candles", [])
+        
+        # Try multiple response structure variants
+        candles = None
+        
+        # Try nested structure: data.candles
+        if isinstance(body.get("data"), dict):
+            candles = body.get("data", {}).get("candles", [])
+        
+        # Try flat data array
+        if not candles and isinstance(body.get("data"), list):
+            candles = body.get("data", [])
+        
+        # Try direct candles key
+        if not candles and isinstance(body.get("candles"), list):
+            candles = body.get("candles", [])
 
         if not candles:
-            # Try alternate response structure
-            candles = body.get("data", []) if isinstance(body.get("data"), list) else []
-
-        if not candles:
-            logger.error(f"❌ OHLCV empty for {sym} {upstox_iv}. URL={url}")
+            logger.error(f"❌ OHLCV empty response for {sym} {upstox_iv}. Response keys: {list(body.keys())} | Sample: {str(body)[:300]}")
             return None
 
         # Upstox candle format: [timestamp, open, high, low, close, volume, oi]
