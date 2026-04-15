@@ -740,9 +740,12 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
     Uses interval parameter for both intraday and daily candles.
     Returns None if failed — signal engine will block trade.
     """
+    logger.info(f"🔍 OHLCV START: {symbol} {interval}")
+    
     cache_key = f"ohlcv_{symbol}_{period}_{interval}"
     cached    = _ohlcv_cache.get(cache_key, {})
     if _fresh(cached.get("ts"), max_sec=60):
+        logger.info(f"OHLCV cached hit for {symbol}")
         return cached["data"]
 
     sym  = symbol.upper()
@@ -752,9 +755,12 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
         return None
 
     upstox_iv = _INTERVAL_MAP.get(interval, "5minute")
+    logger.info(f"OHLCV mapped interval: {interval} → {upstox_iv}")
 
     try:
+        logger.info(f"OHLCV getting token...")
         token = await _get_token()
+        logger.info(f"OHLCV got token, making request...")
         
         # Use /market-quote/ohlc endpoint with interval param
         # This endpoint works for both intraday (5minute, 15minute, etc) and daily (1day)
@@ -763,6 +769,8 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
             "interval": upstox_iv,
         }
         
+        logger.info(f"OHLCV params: {params}")
+        
         resp = None
         async with httpx.AsyncClient(timeout=20) as c:
             resp = await c.get(
@@ -770,15 +778,19 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
                 params=params,
                 headers=_headers(token),
             )
+        
+        logger.info(f"OHLCV response status: {resp.status_code}")
             
         if resp.status_code != 200:
             logger.error(f"OHLCV failed {resp.status_code} for {sym} {upstox_iv}: {resp.text[:300]}")
             return None
 
         body = resp.json()
+        logger.info(f"OHLCV response body keys: {list(body.keys())}")
         
         # /market-quote/ohlc returns: {"data": {instrument_key: {ohlc: {o, h, l, c}, ltp, ...}}}
         data_dict = body.get("data", {})
+        logger.info(f"OHLCV data keys: {list(data_dict.keys()) if isinstance(data_dict, dict) else 'NOT_DICT'}")
         
         # Get OHLC for our instrument
         instr_data = data_dict.get(ikey) or (data_dict.get(list(data_dict.keys())[0]) if data_dict else None)
@@ -787,10 +799,14 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
             logger.error(f"OHLCV no data for {sym}. Response keys: {list(body.keys())}")
             return None
         
+        logger.info(f"OHLCV instr_data keys: {list(instr_data.keys())}")
+        
         ohlc = instr_data.get("ohlc", {})
         if not ohlc:
             logger.error(f"OHLCV no OHLC field for {sym}. Instr keys: {list(instr_data.keys())}")
             return None
+        
+        logger.info(f"OHLCV ohlc data: {ohlc}")
         
         # /market-quote/ohlc returns single OHLC bar, not historical candles
         # Convert to DataFrame for consistency with signal engine
@@ -806,17 +822,22 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
         df = df[["open", "high", "low", "close", "volume"]].astype(float)
         
         if df.empty:
+            logger.error(f"OHLCV dataframe empty for {sym}")
             return None
         
         _ohlcv_cache[cache_key] = {"data": df, "ts": datetime.now(IST).isoformat()}
-        logger.info(f"✅ OHLCV: {sym} {upstox_iv} → latest bar (note: /market-quote/ohlc returns 1 candle only)")
+        logger.info(f"✅ OHLCV: {sym} {upstox_iv} → latest bar")
         return df
 
     except RuntimeError as e:
-        logger.error(f"OHLCV blocked — {e}")
+        logger.error(f"OHLCV RuntimeError — {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return None
     except Exception as e:
-        logger.error(f"OHLCV error for {sym} {upstox_iv}: {e}")
+        logger.error(f"OHLCV error for {sym} {upstox_iv}: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return None
 
 
