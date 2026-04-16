@@ -730,7 +730,7 @@ async def get_premiums_for_open_trades(open_trades: List[Dict]) -> Dict[int, flo
 _INTERVAL_MAP = {
     "1m": "1minute", "2m": "2minute", "5m": "5minute",
     "15m": "15minute", "30m": "30minute",
-    "60m": "60minute", "1h": "60minute", "1d": "day",
+    "60m": "60minute", "1h": "60minute", "1d": "1day",
 }
 
 
@@ -778,16 +778,43 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
             "to_date": end_date.isoformat(),
         }
         
-        logger.info(f"OHLCV params: {params}")
-        logger.info(f"OHLCV URL: {UPSTOX_BASE}/historical-candle/intraday/{_enc(ikey)}")
+    # Try different interval formats that might work
+    interval_options = [
+        upstox_iv,  # Current format (e.g., "5minute")
+        upstox_iv.replace("minute", "m"),  # "5m"
+        upstox_iv.replace("minute", ""),  # "5"
+        interval,  # Original input (e.g., "5m")
+        interval.replace("m", "minute"),  # "5minute"
+    ]
+    
+    resp = None
+    for iv_try in interval_options:
+        test_params = params.copy()
+        test_params["interval"] = iv_try
+        logger.info(f"OHLCV trying interval: {iv_try}")
         
-        resp = None
-        async with httpx.AsyncClient(timeout=20) as c:
-            resp = await c.get(
-                f"{UPSTOX_BASE}/historical-candle/intraday/{_enc(ikey)}",
-                params=params,
-                headers=_headers(token),
-            )
+        for url in endpoints_to_try:
+            try:
+                async with httpx.AsyncClient(timeout=20) as c:
+                    resp = await c.get(
+                        url,
+                        params=test_params,
+                        headers=_headers(token),
+                    )
+                
+                if resp.status_code == 200:
+                    logger.info(f"OHLCV SUCCESS: {url} with interval {iv_try}")
+                    break
+                    
+            except Exception as e:
+                continue
+        
+        if resp and resp.status_code == 200:
+            break
+    
+    if not resp or resp.status_code != 200:
+        logger.error(f"OHLCV all combinations failed for {sym}")
+        return None
         
         logger.info(f"OHLCV response status: {resp.status_code}")
             
