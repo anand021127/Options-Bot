@@ -822,55 +822,94 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
 
         if not resp or resp.status_code != 200:
             logger.error(f"OHLCV all combinations failed for {sym}")
+
+            # Final fallback: return latest bar from the single-bar /market-quote/ohlc endpoint
+            try:
+                async with httpx.AsyncClient(timeout=20) as c:
+                    resp = await c.get(
+                        f"{UPSTOX_BASE}/market-quote/ohlc",
+                        params={"instrument_key": ikey, "interval": upstox_iv},
+                        headers=_headers(token),
+                    )
+                if resp.status_code == 200:
+                    logger.info("OHLCV fallback /market-quote/ohlc succeeded")
+                else:
+                    logger.error(f"OHLCV fallback /market-quote/ohlc failed: {resp.status_code} - {resp.text[:150]}")
+            except Exception as e:
+                logger.warning(f"OHLCV fallback /market-quote/ohlc exception: {e}")
+                resp = None
+
+        if not resp or resp.status_code != 200:
+            logger.error(f"OHLCV all combinations failed for {sym}")
             return None
 
         logger.info(f"OHLCV response status: {resp.status_code}")
 
-        if resp.status_code != 200:
-            logger.error(f"OHLCV failed {resp.status_code} for {sym} {upstox_iv}: {resp.text[:300]}")
-            return None
-
         body = resp.json()
         logger.info(f"OHLCV response body keys: {list(body.keys())}")
-        
-        # /historical-candle/intraday returns: {"data": {"candles": [[timestamp, open, high, low, close, volume], ...]}}
-        data = body.get("data", {})
-        candles = data.get("candles", [])
-        
-        if not candles:
-            logger.error(f"OHLCV no candles data for {sym}. Response: {body}")
-            return None
-        
-        logger.info(f"OHLCV received {len(candles)} candles")
-        
-        # Convert to DataFrame
-        # Format: [timestamp, open, high, low, close, volume]
+
+        data = body.get("data", body)
+        candles = None
+        if isinstance(data, dict):
+            candles = data.get("candles")
+            if candles is None:
+                for value in data.values():
+                    if isinstance(value, dict) and "candles" in value:
+                        candles = value["candles"]
+                        break
+
         df_data = []
-        for candle in candles:
-            if len(candle) >= 6:
+        if candles:
+            logger.info(f"OHLCV received {len(candles)} candles")
+            for candle in candles:
+                if len(candle) >= 6:
+                    df_data.append({
+                        "timestamp": pd.Timestamp(candle[0], tz=IST),
+                        "open": float(candle[1]),
+                        "high": float(candle[2]),
+                        "low": float(candle[3]),
+                        "close": float(candle[4]),
+                        "volume": int(candle[5]),
+                    })
+        else:
+            logger.info("OHLCV no candles field, trying single-bar OHLC parsing")
+            ohlc = None
+            volume = 0
+            if isinstance(data, dict):
+                ohlc = data.get("ohlc")
+                if not ohlc:
+                    for value in data.values():
+                        if isinstance(value, dict) and "ohlc" in value:
+                            ohlc = value["ohlc"]
+                            volume = int(value.get("volume", 0))
+                            break
+                else:
+                    volume = int(data.get("volume", 0))
+
+            if ohlc:
                 df_data.append({
-                    "timestamp": pd.Timestamp(candle[0], tz=IST),
-                    "open": float(candle[1]),
-                    "high": float(candle[2]),
-                    "low": float(candle[3]),
-                    "close": float(candle[4]),
-                    "volume": int(candle[5]),
+                    "timestamp": pd.Timestamp.now(tz=IST),
+                    "open": float(ohlc.get("o", 0)),
+                    "high": float(ohlc.get("h", 0)),
+                    "low": float(ohlc.get("l", 0)),
+                    "close": float(ohlc.get("c", 0)),
+                    "volume": volume,
                 })
-        
+
         if not df_data:
-            logger.error(f"OHLCV no valid candle data for {sym}")
+            logger.error(f"OHLCV no valid candle or OHLC data for {sym}. Response: {body}")
             return None
-        
+
         df = pd.DataFrame(df_data)
         df.set_index("timestamp", inplace=True)
         df = df[["open", "high", "low", "close", "volume"]].astype(float)
-        
+
         if df.empty:
             logger.error(f"OHLCV dataframe empty for {sym}")
             return None
-        
+
         _ohlcv_cache[cache_key] = {"data": df, "ts": datetime.now(IST).isoformat()}
-        logger.info(f"✅ OHLCV: {sym} {upstox_iv} → {len(df)} historical bars")
+        logger.info(f"✅ OHLCV: {sym} {upstox_iv} → {len(df)} bars")
         return df
 
     except RuntimeError as e:
