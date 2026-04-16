@@ -728,19 +728,19 @@ async def get_premiums_for_open_trades(open_trades: List[Dict]) -> Dict[int, flo
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 _INTERVAL_MAP = {
-    "1m": "1m", "2m": "2m", "5m": "5m",
-    "15m": "15m", "30m": "30m",
-    "60m": "60m", "1h": "60m", "1d": "1d",
+    "1m": "1minute", "2m": "2minute", "5m": "5minute",
+    "15m": "15minute", "30m": "30minute",
+    "60m": "60minute", "1h": "60minute", "1d": "day",
 }
 
 
 async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> Optional[pd.DataFrame]:
     """
-    Fetch OHLCV candles from Upstox via /market-quote/ohlc.
-    Uses interval parameter for both intraday and daily candles.
+    Fetch OHLCV candles from Upstox via /historical-candle/intraday.
+    Returns historical candles for the specified period and interval.
     Returns None if failed — signal engine will block trade.
     """
-    logger.info(f"🔍 OHLCV START: {symbol} {interval}")
+    logger.info(f"🔍 OHLCV START: {symbol} {period} {interval}")
     
     cache_key = f"ohlcv_{symbol}_{period}_{interval}"
     cached    = _ohlcv_cache.get(cache_key, {})
@@ -754,7 +754,7 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
         logger.error(f"No index key for OHLCV: {sym}")
         return None
 
-    upstox_iv = _INTERVAL_MAP.get(interval, "5minute")
+    upstox_iv = _INTERVAL_MAP.get(interval, "5m")
     logger.info(f"OHLCV mapped interval: {interval} → {upstox_iv}")
 
     try:
@@ -762,19 +762,29 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
         token = await _get_token()
         logger.info(f"OHLCV got token, making request...")
         
-        # Use /market-quote/ohlc endpoint with interval param
-        # This endpoint works for both intraday (5minute, 15minute, etc) and daily (1day)
+        # Calculate date range based on period
+        end_date = datetime.now(IST).date()
+        if period.endswith('d'):
+            days = int(period[:-1])
+            start_date = end_date - timedelta(days=days)
+        else:
+            # Default to 5 days
+            start_date = end_date - timedelta(days=5)
+        
+        # Use /historical-candle/intraday endpoint for historical data
         params = {
-            "instrument_key": ikey,
             "interval": upstox_iv,
+            "from_date": start_date.isoformat(),
+            "to_date": end_date.isoformat(),
         }
         
         logger.info(f"OHLCV params: {params}")
+        logger.info(f"OHLCV URL: {UPSTOX_BASE}/historical-candle/intraday/{_enc(ikey)}")
         
         resp = None
         async with httpx.AsyncClient(timeout=20) as c:
             resp = await c.get(
-                f"{UPSTOX_BASE}/market-quote/ohlc",
+                f"{UPSTOX_BASE}/historical-candle/intraday/{_enc(ikey)}",
                 params=params,
                 headers=_headers(token),
             )
@@ -788,37 +798,36 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
         body = resp.json()
         logger.info(f"OHLCV response body keys: {list(body.keys())}")
         
-        # /market-quote/ohlc returns: {"data": {instrument_key: {ohlc: {o, h, l, c}, ltp, ...}}}
-        data_dict = body.get("data", {})
-        logger.info(f"OHLCV data keys: {list(data_dict.keys()) if isinstance(data_dict, dict) else 'NOT_DICT'}")
+        # /historical-candle/intraday returns: {"data": {"candles": [[timestamp, open, high, low, close, volume], ...]}}
+        data = body.get("data", {})
+        candles = data.get("candles", [])
         
-        # Get OHLC for our instrument
-        instr_data = data_dict.get(ikey) or (data_dict.get(list(data_dict.keys())[0]) if data_dict else None)
-        
-        if not instr_data:
-            logger.error(f"OHLCV no data for {sym}. Response keys: {list(body.keys())}")
+        if not candles:
+            logger.error(f"OHLCV no candles data for {sym}. Response: {body}")
             return None
         
-        logger.info(f"OHLCV instr_data keys: {list(instr_data.keys())}")
+        logger.info(f"OHLCV received {len(candles)} candles")
         
-        ohlc = instr_data.get("ohlc", {})
-        if not ohlc:
-            logger.error(f"OHLCV no OHLC field for {sym}. Instr keys: {list(instr_data.keys())}")
+        # Convert to DataFrame
+        # Format: [timestamp, open, high, low, close, volume]
+        df_data = []
+        for candle in candles:
+            if len(candle) >= 6:
+                df_data.append({
+                    "timestamp": pd.Timestamp(candle[0], tz=IST),
+                    "open": float(candle[1]),
+                    "high": float(candle[2]),
+                    "low": float(candle[3]),
+                    "close": float(candle[4]),
+                    "volume": int(candle[5]),
+                })
+        
+        if not df_data:
+            logger.error(f"OHLCV no valid candle data for {sym}")
             return None
         
-        logger.info(f"OHLCV ohlc data: {ohlc}")
-        
-        # /market-quote/ohlc returns single OHLC bar, not historical candles
-        # Convert to DataFrame for consistency with signal engine
-        # Format: {o: open, h: high, l: low, c: close, ...}
-        df = pd.DataFrame([{
-            "open": float(ohlc.get("o", 0)),
-            "high": float(ohlc.get("h", 0)),
-            "low": float(ohlc.get("l", 0)),
-            "close": float(ohlc.get("c", 0)),
-            "volume": int(instr_data.get("volume", 0)),
-        }], index=[pd.Timestamp.now(tz=IST)])
-        
+        df = pd.DataFrame(df_data)
+        df.set_index("timestamp", inplace=True)
         df = df[["open", "high", "low", "close", "volume"]].astype(float)
         
         if df.empty:
@@ -826,7 +835,7 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
             return None
         
         _ohlcv_cache[cache_key] = {"data": df, "ts": datetime.now(IST).isoformat()}
-        logger.info(f"✅ OHLCV: {sym} {upstox_iv} → latest bar")
+        logger.info(f"✅ OHLCV: {sym} {upstox_iv} → {len(df)} historical bars")
         return df
 
     except RuntimeError as e:
