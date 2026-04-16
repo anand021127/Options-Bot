@@ -777,47 +777,55 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
             "from_date": start_date.isoformat(),
             "to_date": end_date.isoformat(),
         }
-        
-    # Try different interval formats that might work
-    interval_options = [
-        upstox_iv,  # Current format (e.g., "5minute")
-        upstox_iv.replace("minute", "m"),  # "5m"
-        upstox_iv.replace("minute", ""),  # "5"
-        interval,  # Original input (e.g., "5m")
-        interval.replace("m", "minute"),  # "5minute"
-    ]
-    
-    resp = None
-    for iv_try in interval_options:
-        test_params = params.copy()
-        test_params["interval"] = iv_try
-        logger.info(f"OHLCV trying interval: {iv_try}")
-        
-        for url in endpoints_to_try:
-            try:
-                async with httpx.AsyncClient(timeout=20) as c:
-                    resp = await c.get(
-                        url,
-                        params=test_params,
-                        headers=_headers(token),
-                    )
-                
-                if resp.status_code == 200:
-                    logger.info(f"OHLCV SUCCESS: {url} with interval {iv_try}")
-                    break
-                    
-            except Exception as e:
-                continue
-        
-        if resp and resp.status_code == 200:
-            break
-    
-    if not resp or resp.status_code != 200:
-        logger.error(f"OHLCV all combinations failed for {sym}")
-        return None
-        
+
+        endpoints_to_try = [
+            f"{UPSTOX_BASE}/historical-candle/intraday/{_enc(ikey)}",
+            f"{UPSTOX_BASE}/historical-candle/{_enc(ikey)}",
+            f"{UPSTOX_BASE}/market-quote/historical/{_enc(ikey)}",
+        ]
+
+        # Try different interval formats that might work
+        interval_options = [
+            upstox_iv,  # Current format (e.g., "5minute")
+            upstox_iv.replace("minute", "m"),  # "5m"
+            upstox_iv.replace("minute", ""),  # "5"
+            interval,  # Original input (e.g., "5m")
+            interval.replace("m", "minute"),  # "5minute"
+        ]
+
+        resp = None
+        for iv_try in interval_options:
+            test_params = params.copy()
+            test_params["interval"] = iv_try
+            logger.info(f"OHLCV trying interval: {iv_try}")
+
+            for url in endpoints_to_try:
+                logger.info(f"OHLCV trying endpoint: {url}")
+                try:
+                    async with httpx.AsyncClient(timeout=20) as c:
+                        resp = await c.get(
+                            url,
+                            params=test_params,
+                            headers=_headers(token),
+                        )
+
+                    if resp.status_code == 200:
+                        logger.info(f"OHLCV SUCCESS: {url} with interval {iv_try}")
+                        break
+                    else:
+                        logger.info(f"OHLCV endpoint {url} failed: {resp.status_code} - {resp.text[:150]}")
+                except Exception as e:
+                    logger.warning(f"OHLCV endpoint {url} raised: {e}")
+
+            if resp and resp.status_code == 200:
+                break
+
+        if not resp or resp.status_code != 200:
+            logger.error(f"OHLCV all combinations failed for {sym}")
+            return None
+
         logger.info(f"OHLCV response status: {resp.status_code}")
-            
+
         if resp.status_code != 200:
             logger.error(f"OHLCV failed {resp.status_code} for {sym} {upstox_iv}: {resp.text[:300]}")
             return None
