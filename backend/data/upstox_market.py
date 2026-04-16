@@ -727,6 +727,22 @@ async def get_premiums_for_open_trades(open_trades: List[Dict]) -> Dict[int, flo
 # OHLCV CANDLES — for technical indicators
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+# V3 API splits interval into unit + numeric value
+# Map user-facing intervals to (unit, interval_number) for V3 API path
+_INTERVAL_V3_MAP = {
+    "1m":  ("minutes", "1"),
+    "2m":  ("minutes", "2"),
+    "3m":  ("minutes", "3"),
+    "5m":  ("minutes", "5"),
+    "10m": ("minutes", "10"),
+    "15m": ("minutes", "15"),
+    "30m": ("minutes", "30"),
+    "60m": ("minutes", "60"),
+    "1h":  ("hours", "1"),
+    "1d":  ("days", "1"),
+}
+
+# Legacy V2 interval names (kept for fallback)
 _INTERVAL_MAP = {
     "1m": "1minute", "2m": "2minute", "5m": "5minute",
     "15m": "15minute", "30m": "30minute",
@@ -736,12 +752,18 @@ _INTERVAL_MAP = {
 
 async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> Optional[pd.DataFrame]:
     """
-    Fetch OHLCV candles from Upstox via /historical-candle/intraday.
-    Returns historical candles for the specified period and interval.
+    Fetch OHLCV candles from Upstox historical-candle API.
+
+    Uses the V3 endpoint first (recommended by Upstox), then falls back to V2.
+    V3 URL format: /v3/historical-candle/{instrument_key}/{unit}/{interval}/{to_date}/{from_date}
+    V3 Intraday:   /v3/historical-candle/intraday/{instrument_key}/{unit}/{interval}
+    V2 URL format: /v2/historical-candle/{instrument_key}/{interval}/{to_date}/{from_date}
+    V2 Intraday:   /v2/historical-candle/intraday/{instrument_key}/{interval}
+
     Returns None if failed — signal engine will block trade.
     """
     logger.info(f"🔍 OHLCV START: {symbol} {period} {interval}")
-    
+
     cache_key = f"ohlcv_{symbol}_{period}_{interval}"
     cached    = _ohlcv_cache.get(cache_key, {})
     if _fresh(cached.get("ts"), max_sec=60):
@@ -754,81 +776,67 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
         logger.error(f"No index key for OHLCV: {sym}")
         return None
 
-    upstox_iv = _INTERVAL_MAP.get(interval, "5m")
-    logger.info(f"OHLCV mapped interval: {interval} → {upstox_iv}")
+    # V3 unit/interval
+    v3_unit, v3_num = _INTERVAL_V3_MAP.get(interval, ("minutes", "5"))
+    # V2 interval string
+    v2_iv = _INTERVAL_MAP.get(interval, "5minute")
+    logger.info(f"OHLCV interval: {interval} → V3={v3_unit}/{v3_num}, V2={v2_iv}")
 
     try:
-        logger.info(f"OHLCV getting token...")
+        logger.info("OHLCV getting token...")
         token = await _get_token()
-        logger.info(f"OHLCV got token, making request...")
-        
+        logger.info("OHLCV got token, making request...")
+
         # Calculate date range based on period
         end_date = datetime.now(IST).date()
         if period.endswith('d'):
             days = int(period[:-1])
             start_date = end_date - timedelta(days=days)
         else:
-            # Default to 5 days
             start_date = end_date - timedelta(days=5)
-        
-        # Use /historical-candle/intraday endpoint for historical data
-        params = {
-            "interval": upstox_iv,
-            "from_date": start_date.isoformat(),
-            "to_date": end_date.isoformat(),
-        }
 
-        endpoints_to_try = [
-            f"{UPSTOX_BASE}/historical-candle/intraday/{_enc(ikey)}",
-            f"{UPSTOX_BASE}/historical-candle/{_enc(ikey)}",
-            f"{UPSTOX_BASE}/market-quote/historical/{_enc(ikey)}",
-        ]
+        encoded_key  = _enc(ikey)
+        to_str       = end_date.isoformat()
+        from_str     = start_date.isoformat()
 
-        # Try different interval formats that might work
-        interval_options = [
-            upstox_iv,  # Current format (e.g., "5minute")
-            upstox_iv.replace("minute", "m"),  # "5m"
-            upstox_iv.replace("minute", ""),  # "5"
-            interval,  # Original input (e.g., "5m")
-            interval.replace("m", "minute"),  # "5minute"
+        # Build URLs with interval/dates in the PATH (not query params)
+        urls_to_try = [
+            # V3 historical (multi-day)
+            f"https://api.upstox.com/v3/historical-candle/{encoded_key}/{v3_unit}/{v3_num}/{to_str}/{from_str}",
+            # V3 intraday (today only)
+            f"https://api.upstox.com/v3/historical-candle/intraday/{encoded_key}/{v3_unit}/{v3_num}",
+            # V2 historical (multi-day) — fallback
+            f"{UPSTOX_BASE}/historical-candle/{encoded_key}/{v2_iv}/{to_str}/{from_str}",
+            # V2 intraday (today only) — fallback
+            f"{UPSTOX_BASE}/historical-candle/intraday/{encoded_key}/{v2_iv}",
         ]
 
         resp = None
-        for iv_try in interval_options:
-            test_params = params.copy()
-            test_params["interval"] = iv_try
-            logger.info(f"OHLCV trying interval: {iv_try}")
+        for url in urls_to_try:
+            logger.info(f"OHLCV trying: {url}")
+            try:
+                async with httpx.AsyncClient(timeout=20) as c:
+                    resp = await c.get(url, headers=_headers(token))
 
-            for url in endpoints_to_try:
-                logger.info(f"OHLCV trying endpoint: {url}")
-                try:
-                    async with httpx.AsyncClient(timeout=20) as c:
-                        resp = await c.get(
-                            url,
-                            params=test_params,
-                            headers=_headers(token),
-                        )
+                if resp.status_code == 200:
+                    body_peek = resp.text[:200]
+                    logger.info(f"OHLCV SUCCESS: {url}")
+                    logger.debug(f"OHLCV body peek: {body_peek}")
+                    break
+                else:
+                    logger.info(f"OHLCV {url} → {resp.status_code}: {resp.text[:150]}")
+            except Exception as e:
+                logger.warning(f"OHLCV {url} raised: {e}")
+                resp = None
 
-                    if resp.status_code == 200:
-                        logger.info(f"OHLCV SUCCESS: {url} with interval {iv_try}")
-                        break
-                    else:
-                        logger.info(f"OHLCV endpoint {url} failed: {resp.status_code} - {resp.text[:150]}")
-                except Exception as e:
-                    logger.warning(f"OHLCV endpoint {url} raised: {e}")
-
-            if resp and resp.status_code == 200:
-                break
-
+        # Fallback: /market-quote/ohlc (single bar, uses query params)
         if not resp or resp.status_code != 200:
-            logger.error(f"OHLCV all combinations failed for {sym}")
-
-            # Final fallback: return latest bar from the single-bar /market-quote/ohlc endpoint
+            logger.error(f"OHLCV all historical endpoints failed for {sym}")
             try:
                 async with httpx.AsyncClient(timeout=20) as c:
                     resp = await c.get(
                         f"{UPSTOX_BASE}/market-quote/ohlc",
-                        params={"instrument_key": ikey, "interval": upstox_iv},
+                        params={"instrument_key": ikey, "interval": "1d"},
                         headers=_headers(token),
                     )
                 if resp.status_code == 200:
@@ -840,7 +848,7 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
                 resp = None
 
         if not resp or resp.status_code != 200:
-            logger.error(f"OHLCV all combinations failed for {sym}")
+            logger.error(f"OHLCV all endpoints failed for {sym}")
             return None
 
         logger.info(f"OHLCV response status: {resp.status_code}")
@@ -889,10 +897,10 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
             if ohlc:
                 df_data.append({
                     "timestamp": pd.Timestamp.now(tz=IST),
-                    "open": float(ohlc.get("o", 0)),
-                    "high": float(ohlc.get("h", 0)),
-                    "low": float(ohlc.get("l", 0)),
-                    "close": float(ohlc.get("c", 0)),
+                    "open": float(ohlc.get("o", ohlc.get("open", 0))),
+                    "high": float(ohlc.get("h", ohlc.get("high", 0))),
+                    "low": float(ohlc.get("l", ohlc.get("low", 0))),
+                    "close": float(ohlc.get("c", ohlc.get("close", 0))),
                     "volume": volume,
                 })
 
@@ -909,7 +917,7 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
             return None
 
         _ohlcv_cache[cache_key] = {"data": df, "ts": datetime.now(IST).isoformat()}
-        logger.info(f"✅ OHLCV: {sym} {upstox_iv} → {len(df)} bars")
+        logger.info(f"✅ OHLCV: {sym} V3/{v3_unit}/{v3_num} → {len(df)} bars")
         return df
 
     except RuntimeError as e:
@@ -918,7 +926,7 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
         logger.error(traceback.format_exc())
         return None
     except Exception as e:
-        logger.error(f"OHLCV error for {sym} {upstox_iv}: {type(e).__name__}: {e}")
+        logger.error(f"OHLCV error for {sym}: {type(e).__name__}: {e}")
         import traceback
         logger.error(traceback.format_exc())
         return None
