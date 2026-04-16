@@ -23,9 +23,12 @@ import StatsBar        from '@/components/StatsBar';
 import NotificationsPanel from '@/components/NotificationsPanel';
 import TradeTracker    from '@/components/TradeTracker';
 import OptionsChain    from '@/components/OptionsChain';
+import AIInsightsPanel from '@/components/AIInsightsPanel';
+import RiskPanel       from '@/components/RiskPanel';
+import SignalDecisionLog from '@/components/SignalDecisionLog';
 
 // ── Tab definition ───────────────────────────────────────────────────────────
-type Tab = 'overview' | 'live' | 'options' | 'chart' | 'signals' | 'btst' | 'analytics' | 'debug';
+type Tab = 'overview' | 'live' | 'options' | 'chart' | 'signals' | 'btst' | 'analytics' | 'ai' | 'risk' | 'debug';
 
 const TABS: { id: Tab; label: string; icon?: string }[] = [
   { id: 'overview',   label: 'Home' },
@@ -35,6 +38,8 @@ const TABS: { id: Tab; label: string; icon?: string }[] = [
   { id: 'signals',    label: 'Signals' },
   { id: 'btst',       label: '🌙 BTST' },
   { id: 'analytics',  label: 'Stats' },
+  { id: 'ai',         label: '🤖 AI' },
+  { id: 'risk',       label: '🛡 Risk' },
   { id: 'debug',      label: '🛠 Debug' },
 ];
 
@@ -536,6 +541,11 @@ export default function Dashboard() {
     daily_reset:     ()  => { fetchStats(); pushAlert('📅 New day', 'info'); },
     alert:           (d) => { pushAlert(d.message, d.type?.toLowerCase() || 'warn'); setUnreadCount(c => c + 1); },
     config_updated:  ()  => fetchBotStatus(),
+    signal_decision: () => {},  // handled by SignalDecisionLog component polling
+    ai_verdict:     (d) => pushAlert(
+      `🤖 AI: ${d.approved ? '✅ Approved' : '⚠️ Caution'} (${d.confidence}%) — ${(d.reasoning || '').slice(0, 60)}`,
+      d.approved ? 'info' : 'warn'
+    ),
     pong:            () => {},
   });
 
@@ -751,6 +761,7 @@ export default function Dashboard() {
                 try { setSignal(await api.getSignal(symbol)); } catch {}
               }}
             />
+            <SignalDecisionLog />
           </div>
         )}
 
@@ -773,6 +784,14 @@ export default function Dashboard() {
 
         {activeTab === 'debug' && (
           <DebugPanel symbol={symbol}/>
+        )}
+
+        {activeTab === 'ai' && (
+          <AIInsightsPanel />
+        )}
+
+        {activeTab === 'risk' && (
+          <RiskPanel botStatus={botStatus} stats={stats} />
         )}
 
       </main>

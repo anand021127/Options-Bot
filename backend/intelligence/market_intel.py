@@ -13,6 +13,7 @@ All functions are fast (cached) and fallback gracefully.
 """
 
 import asyncio
+import pandas as pd
 from datetime import datetime, date, timedelta
 from typing import Dict, Optional, Tuple
 from loguru import logger
@@ -188,11 +189,11 @@ _no_trade_day_cache: Dict = {}
 async def is_no_trade_day(symbol: str = "NIFTY") -> Tuple[bool, str]:
     """
     Auto-detect dead/low-opportunity days.
-    A "no-trade day" has ALL of:
-      - ADX < 18 (extremely flat)
-      - Volume < 60% of 20-day average
-      - ATR < 0.3% of price (market barely moving)
-      - No signal generated in last 2 hours
+    A "no-trade day" now requires ALL of (much stricter check):
+      - ADX < 15 (genuinely flat — was 18)
+      - Volume < 30% of 20-day average (dead volume)
+      - ATR < 0.25% of price (market barely moving — was 0.3%)
+      - RSI in 45-55 dead zone (no momentum at all)
 
     Returns (is_dead, reason).
     """
@@ -206,8 +207,8 @@ async def is_no_trade_day(symbol: str = "NIFTY") -> Tuple[bool, str]:
         from strategy.indicators import adx, atr, volume_confirmation, compute_all_indicators
 
         df = await fetch_ohlcv(symbol, period="5d", interval="5m")
-        if df is None or len(df) < 50:
-            return False, "Insufficient data"
+        if df is None or len(df) < 30:
+            return False, "Insufficient data — allowing trades"
 
         df     = compute_all_indicators(df)
         df_adx = adx(df.tail(60))
@@ -217,18 +218,20 @@ async def is_no_trade_day(symbol: str = "NIFTY") -> Tuple[bool, str]:
         atr_val    = float(latest["atr"])
         price      = float(latest["close"])
         atr_pct    = (atr_val / price) * 100
+        rsi_val    = float(latest["rsi"]) if not pd.isna(latest.get("rsi", float('nan'))) else 50.0
         vol_ok     = volume_confirmation(df)
 
         conditions = {
-            "low_adx":    adx_val < 18,
+            "low_adx":    adx_val < 15,        # was 18 — only genuinely flat markets
             "low_volume": not vol_ok,
-            "low_atr":    atr_pct < 0.3,
+            "low_atr":    atr_pct < 0.25,       # was 0.3 — only truly dead markets
+            "dead_rsi":   45 <= rsi_val <= 55,   # no momentum at all
         }
 
-        hits = sum(conditions.values())
-        if hits >= 2:
-            reason = (f"No-trade day detected: ADX={adx_val:.0f} | "
-                      f"ATR={atr_pct:.2f}% | Vol={'OK' if vol_ok else 'LOW'}")
+        # ALL conditions must be true (was 2/3 — way too aggressive)
+        if all(conditions.values()):
+            reason = (f"No-trade day: ADX={adx_val:.0f} | "
+                      f"ATR={atr_pct:.2f}% | Vol={'OK' if vol_ok else 'LOW'} | RSI={rsi_val:.0f}")
             logger.warning(f"⚠️ {reason}")
             result = (True, reason)
         else:

@@ -86,21 +86,27 @@ def market_regime(df: pd.DataFrame) -> str:
     """
     Classify market as TRENDING, SIDEWAYS, VOLATILE, or WEAK_TREND.
     This is the primary market condition filter.
+
+    Thresholds calibrated for Indian indices (NIFTY/BANKNIFTY):
+      - ATR > 2.5% is truly volatile (1.5% is normal intraday for Nifty)
+      - ADX < 15  is genuinely sideways (< 20 was too aggressive)
     """
-    if len(df) < 30:
+    if len(df) < 20:
         return "UNKNOWN"
 
     df_adx     = adx(df.tail(60))
-    latest_adx = float(df_adx["adx"].iloc[-1]) if not df_adx["adx"].isna().iloc[-1] else 15.0
+    latest_adx = float(df_adx["adx"].iloc[-1]) if not df_adx["adx"].isna().iloc[-1] else 18.0
     atr_val    = float(atr(df.tail(60)).iloc[-1])
     price      = float(df["close"].iloc[-1])
     atr_pct    = (atr_val / price) * 100
 
-    if atr_pct > 1.5:
+    if atr_pct > 2.5:
         return "VOLATILE"
     elif latest_adx >= 25:
         return "TRENDING"
-    elif latest_adx < 20:
+    elif latest_adx >= 20:
+        return "WEAK_TREND"
+    elif latest_adx < 15:
         return "SIDEWAYS"
     else:
         return "WEAK_TREND"
@@ -167,15 +173,18 @@ def iv_rank_proxy(df: pd.DataFrame) -> Dict:
     IVR 30-60 → Normal   → OK
     IVR 60-80 → High IV  → Caution (premium expensive)
     IVR > 80  → Extreme  → AVOID buying — premium will crush
+
+    Requires at least 80 bars for reliable rolling HV.
+    With insufficient data → returns NORMAL_IV (don't block trades on noise).
     """
-    if len(df) < 50:
-        return {"hv_current": 0, "hv_low": 0, "hv_high": 0, "iv_rank": 50, "regime": "NORMAL_IV"}
+    if len(df) < 80:
+        return {"hv_current": 0, "hv_low": 0, "hv_high": 0, "iv_rank": 40, "regime": "NORMAL_IV"}
 
     log_ret    = np.log(df["close"] / df["close"].shift(1)).dropna()
     rolling_hv = (log_ret.rolling(20).std() * np.sqrt(252 * 75) * 100).dropna()
 
-    if len(rolling_hv) < 10:
-        return {"hv_current": 0, "hv_low": 0, "hv_high": 0, "iv_rank": 50, "regime": "NORMAL_IV"}
+    if len(rolling_hv) < 20:
+        return {"hv_current": 0, "hv_low": 0, "hv_high": 0, "iv_rank": 40, "regime": "NORMAL_IV"}
 
     hv_current = round(float(rolling_hv.iloc[-1]), 2)
     hv_low     = round(float(rolling_hv.min()), 2)
@@ -339,22 +348,24 @@ def detect_pullback_entry(df: pd.DataFrame) -> Optional[str]:
 # ─── Quality Filters ──────────────────────────────────────────────────────────
 
 def is_fake_spike(df: pd.DataFrame) -> bool:
-    """Detect wick-dominated candle (possible manipulation)."""
+    """Detect wick-dominated candle (possible manipulation). Ratio 4x = very extreme only."""
     c         = df.iloc[-1]
     body      = abs(float(c["close"]) - float(c["open"]))
     wick_up   = float(c["high"])  - max(float(c["close"]), float(c["open"]))
     wick_down = min(float(c["close"]), float(c["open"])) - float(c["low"])
     if body < 0.01:
-        return True
-    return (wick_up + wick_down) > (body * 3)
+        return False   # doji candles are valid — don't block
+    return (wick_up + wick_down) > (body * 4)
 
 
 def is_low_volume_period(df: pd.DataFrame) -> bool:
     if "volume" not in df.columns or df["volume"].sum() == 0:
-        return False
+        return False   # no volume data available — don't block
     avg_vol  = float(df["volume"].rolling(30).mean().iloc[-1])
+    if avg_vol <= 0:
+        return False
     curr_vol = float(df["volume"].iloc[-1])
-    return curr_vol < avg_vol * 0.5
+    return curr_vol < avg_vol * 0.3   # only block truly dead volume (30% threshold)
 
 
 # ─── Volume ───────────────────────────────────────────────────────────────────

@@ -84,9 +84,14 @@ class Settings(BaseSettings):
     # You can also set a static one here as fallback
     UPSTOX_ACCESS_TOKEN: str = ""
 
+    # AI Advisor — Gemini
+    AI_ENABLED:          bool = True
+    GEMINI_API_KEY:      str  = ""
+    AI_MIN_CONFIDENCE:   int  = 50    # below this, AI flags a warning (but doesn't block)
+
     MARKET_OPEN:         str = "09:15"
     MARKET_CLOSE:        str = "15:30"
-    DATA_FETCH_INTERVAL: int = 60
+    DATA_FETCH_INTERVAL: int = 45     # seconds between signal checks (was 60)
 
     class Config:
         env_file = ".env"

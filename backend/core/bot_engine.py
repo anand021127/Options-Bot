@@ -41,6 +41,15 @@ from config import settings
 _broadcast_fn = None
 
 
+def _parse_bool(val, default=False) -> bool:
+    """Parse config booleans — handles 'true', 'True', True, '1', etc."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes")
+    return default
+
+
 def set_broadcast_fn(fn):
     global _broadcast_fn
     _broadcast_fn = fn
@@ -160,14 +169,14 @@ class BotEngine:
         self.day_stop_losses   = int(  cfg.get("max_loss_streak_day_stop",settings.MAX_LOSS_STREAK_DAY_STOP))
         self.cooldown_minutes  = int(  cfg.get("cooldown_minutes",        settings.COOLDOWN_MINUTES))
         self.min_score         = int(  cfg.get("min_score",               settings.MIN_SCORE))
-        self.btst_enabled      = cfg.get("btst_enabled", "false") == "true"
+        self.btst_enabled      = _parse_bool(cfg.get("btst_enabled", "false"))
         self.filters = {
-            "use_adx_filter":    cfg.get("use_adx_filter",    "true") == "true",
-            "use_iv_filter":     cfg.get("use_iv_filter",     "true") == "true",
-            "use_time_filter":   cfg.get("use_time_filter",   "true") == "true",
-            "use_mtf":           cfg.get("use_mtf",           "true") == "true",
-            "use_volume_filter": cfg.get("use_volume_filter", "true") == "true",
-            "use_spike_filter":  cfg.get("use_spike_filter",  "true") == "true",
+            "use_adx_filter":    _parse_bool(cfg.get("use_adx_filter",    "true"), default=True),
+            "use_iv_filter":     _parse_bool(cfg.get("use_iv_filter",     "true"), default=True),
+            "use_time_filter":   _parse_bool(cfg.get("use_time_filter",   "true"), default=True),
+            "use_mtf":           _parse_bool(cfg.get("use_mtf",           "true"), default=True),
+            "use_volume_filter": _parse_bool(cfg.get("use_volume_filter", "true"), default=True),
+            "use_spike_filter":  _parse_bool(cfg.get("use_spike_filter",  "true"), default=True),
         }
 
     # ── Signal loop ───────────────────────────────────────────────────────────
@@ -231,6 +240,26 @@ class BotEngine:
                 await self.emergency_stop()
             return
 
+        # ── Log and broadcast gate-by-gate decision ───────────────────────
+        gate_log = signal.get("gate_log", [])
+        decision_summary = {
+            "symbol":      self.symbol,
+            "signal_type": signal["signal_type"],
+            "score":       signal.get("score", 0),
+            "min_score":   self.min_score,
+            "blocked_by":  signal.get("blocked_by", ""),
+            "gate_log":    gate_log,
+            "reasons":     signal.get("reasons", [])[:5],
+            "strategy":    str(signal.get("strategy_type", "")),
+            "timestamp":   datetime.now().isoformat(),
+        }
+        logger.info(
+            f"[DECISION] {self.symbol} | {signal['signal_type']} | "
+            f"Score={signal.get('score', 0)}/{self.min_score} | "
+            f"Blocked={signal.get('blocked_by', 'none')} | "
+            f"Gates: {' '.join(g.split(':')[0] for g in gate_log[:5])}"
+        )
+
         await log_signal(
             self.symbol, signal["signal_type"],
             "; ".join(signal["reasons"][:3]),
@@ -241,9 +270,35 @@ class BotEngine:
             strategy=signal.get("strategy_type", ""),
         )
         await _broadcast("signal", signal)
+        await _broadcast("signal_decision", decision_summary)
 
         if signal["signal_type"] == "NO_TRADE":
             return
+
+        # ── AI validation (advisory — never blocks) ──────────────────────
+        ai_verdict = None
+        try:
+            from intelligence.ai_advisor import validate_signal
+            ai_verdict = await validate_signal(
+                signal=signal,
+                indicators=signal.get("indicators", {}),
+                symbol=self.symbol,
+            )
+            signal["ai_verdict"] = ai_verdict
+            decision_summary["ai_verdict"] = ai_verdict
+            await _broadcast("ai_verdict", ai_verdict)
+
+            if not ai_verdict.get("approved", True):
+                logger.warning(
+                    f"🤖 AI CAUTION: {ai_verdict.get('reasoning', '')} "
+                    f"(conf={ai_verdict.get('confidence', 0)}%) — proceeding anyway"
+                )
+                await add_notification(
+                    "INFO", "AI Caution",
+                    f"AI flagged: {ai_verdict.get('reasoning', '')[:100]}"
+                )
+        except Exception as e:
+            logger.debug(f"AI advisor skipped: {e}")
 
         await self._enter_trade(signal)
 

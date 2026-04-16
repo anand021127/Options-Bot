@@ -43,6 +43,17 @@ IST = ZoneInfo("Asia/Kolkata")
 DEFAULT_MIN_SCORE = 5
 
 
+# ─── Helper: robust bool parsing ─────────────────────────────────────────────
+
+def _parse_bool(val, default=True) -> bool:
+    """Parse config booleans — handles 'true', 'True', True, '1', etc."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes")
+    return default
+
+
 # ─── Time filter ─────────────────────────────────────────────────────────────
 
 def _is_valid_trading_time() -> Tuple[bool, str]:
@@ -90,19 +101,20 @@ async def generate_signal(
     if filters is None:
         filters = {}
 
-    use_adx   = filters.get("use_adx_filter",    True)
-    use_iv    = filters.get("use_iv_filter",      True)
-    use_time  = filters.get("use_time_filter",    True)
-    use_mtf   = filters.get("use_mtf",            True)
-    use_vol   = filters.get("use_volume_filter",  True)
-    use_spike = filters.get("use_spike_filter",   True)
+    use_adx   = _parse_bool(filters.get("use_adx_filter",    True))
+    use_iv    = _parse_bool(filters.get("use_iv_filter",      True))
+    use_time  = _parse_bool(filters.get("use_time_filter",    True))
+    use_mtf   = _parse_bool(filters.get("use_mtf",            True))
+    use_vol   = _parse_bool(filters.get("use_volume_filter",  True))
+    use_spike = _parse_bool(filters.get("use_spike_filter",   True))
 
     result = {
         "signal_type":    "NO_TRADE",
         "score":          0,
-        "max_score":      14,
+        "max_score":      16,
         "reasons":        [],
         "blocked_by":     None,
+        "gate_log":       [],   # transparent gate-by-gate audit
         "option":         None,
         "sl_pct":         0.0,
         "target_pct":     0.0,
@@ -120,7 +132,9 @@ async def generate_signal(
     if is_high_impact_event_today():
         result["reasons"].append("🚫 High-impact event today — trading suspended")
         result["blocked_by"] = "EVENT_CALENDAR"
+        result["gate_log"].append("GATE1_EVENT: ❌ BLOCKED")
         return result
+    result["gate_log"].append("GATE1_EVENT: ✅ clear")
 
     # ── GATE 2: Time filter ───────────────────────────────────────────────────
     if use_time:
@@ -128,7 +142,11 @@ async def generate_signal(
         if not time_ok:
             result["reasons"].append(f"⏰ {time_msg}")
             result["blocked_by"] = "TIME_FILTER"
+            result["gate_log"].append(f"GATE2_TIME: ❌ {time_msg}")
             return result
+        result["gate_log"].append(f"GATE2_TIME: ✅ {time_msg}")
+    else:
+        result["gate_log"].append("GATE2_TIME: ⏭ skipped")
 
     # ── GATE 3: No-trade day detection ────────────────────────────────────────
     if settings.NO_TRADE_DAY_AUTO:
@@ -136,37 +154,49 @@ async def generate_signal(
         if is_dead:
             result["reasons"].append(f"😴 {dead_reason}")
             result["blocked_by"] = "NO_TRADE_DAY"
+            result["gate_log"].append(f"GATE3_DEAD_DAY: ❌ {dead_reason}")
             return result
+        result["gate_log"].append("GATE3_DEAD_DAY: ✅ market alive")
+    else:
+        result["gate_log"].append("GATE3_DEAD_DAY: ⏭ disabled")
 
     # ── GATE 4: Price data ────────────────────────────────────────────────────
     price_data = await fetch_live_price(symbol)
     if not price_data:
         result["reasons"].append("Price data unavailable")
         result["blocked_by"] = "NO_DATA"
+        result["gate_log"].append("GATE4_PRICE: ❌ no price")
         return result
     result["price_data"] = price_data
+    result["gate_log"].append(f"GATE4_PRICE: ✅ ₹{price_data.get('price', 0):.0f}")
 
-    # ── GATE 5: OHLCV data ────────────────────────────────────────────────────
+    # ── GATE 5: OHLCV data (relaxed: 20 candles = ~100 min of data) ───────────
     df5 = await fetch_ohlcv(symbol, period="5d", interval="5m")
-    if df5 is None or len(df5) < 60:
-        result["reasons"].append("Insufficient OHLCV data")
+    if df5 is None or len(df5) < 20:
+        result["reasons"].append(f"Insufficient OHLCV data ({len(df5) if df5 is not None else 0} bars, need 20)")
         result["blocked_by"] = "NO_DATA"
+        result["gate_log"].append(f"GATE5_OHLCV: ❌ {len(df5) if df5 is not None else 0} bars")
         return result
+    result["gate_log"].append(f"GATE5_OHLCV: ✅ {len(df5)} bars")
 
     df5    = compute_all_indicators(df5)
     latest = df5.iloc[-1]
 
     # ── GATE 6: Candle quality ────────────────────────────────────────────────
     if use_spike and is_fake_spike(df5):
-        result["reasons"].append("🚫 Fake spike candle — wick > 3× body")
+        result["reasons"].append("🚫 Fake spike candle — wick > 4× body")
         result["blocked_by"] = "FAKE_SPIKE"
+        result["gate_log"].append("GATE6_SPIKE: ❌ fake spike")
         return result
+    result["gate_log"].append("GATE6_SPIKE: ✅")
 
-    # ── GATE 7: Low volume ────────────────────────────────────────────────────
+    # ── GATE 7: Low volume (advisory — don't hard-block, just note) ──────────
+    low_vol = False
     if use_vol and is_low_volume_period(df5):
-        result["reasons"].append("🚫 Low volume period — signal unreliable")
-        result["blocked_by"] = "LOW_VOLUME"
-        return result
+        low_vol = True
+        result["gate_log"].append("GATE7_VOLUME: ⚠️ low volume — score penalty applied")
+    else:
+        result["gate_log"].append("GATE7_VOLUME: ✅")
 
     # ── Build indicators ──────────────────────────────────────────────────────
     df_adx   = adx(df5.tail(60))
@@ -203,22 +233,29 @@ async def generate_signal(
         "iv_rank": iv_data, "fake_spike": is_fake_spike(df5),
     }
 
-    # ── GATE 8: Regime filter ─────────────────────────────────────────────────
+    # ── GATE 8: Regime filter (relaxed — only block ADX<15 SIDEWAYS) ──────────
     if use_adx:
         if regime == "SIDEWAYS":
-            result["reasons"].append(f"🚫 SIDEWAYS market (ADX={adx_val:.0f}) — no edge")
+            result["reasons"].append(f"🚫 SIDEWAYS market (ADX={adx_val:.0f}<15) — genuinely choppy")
             result["blocked_by"] = "SIDEWAYS_MARKET"
+            result["gate_log"].append(f"GATE8_REGIME: ❌ SIDEWAYS ADX={adx_val:.0f}")
             return result
         if regime == "VOLATILE":
-            result["reasons"].append(f"⚡ VOLATILE regime — avoid buying options")
+            result["reasons"].append(f"⚡ VOLATILE (ATR>2.5%) — avoid buying options")
             result["blocked_by"] = "VOLATILE_MARKET"
+            result["gate_log"].append(f"GATE8_REGIME: ❌ VOLATILE")
             return result
+        result["gate_log"].append(f"GATE8_REGIME: ✅ {regime} ADX={adx_val:.0f}")
+    else:
+        result["gate_log"].append("GATE8_REGIME: ⏭ skipped")
 
-    # ── GATE 9: IV filter ─────────────────────────────────────────────────────
-    if use_iv and iv_data["regime"] in ("HIGH_IV", "EXTREME_IV"):
-        result["reasons"].append(f"🚫 IV Rank {iv_data['iv_rank']} — premium too expensive")
-        result["blocked_by"] = "HIGH_IV"
+    # ── GATE 9: IV filter (only block EXTREME_IV — HIGH_IV just gets penalty) ─
+    if use_iv and iv_data["regime"] == "EXTREME_IV":
+        result["reasons"].append(f"🚫 EXTREME IV Rank {iv_data['iv_rank']} — premium crushing")
+        result["blocked_by"] = "EXTREME_IV"
+        result["gate_log"].append(f"GATE9_IV: ❌ EXTREME IVR={iv_data['iv_rank']}")
         return result
+    result["gate_log"].append(f"GATE9_IV: ✅ {iv_data['regime']} IVR={iv_data['iv_rank']}")
 
     # ── Load strategy weights ─────────────────────────────────────────────────
     weights = await get_strategy_weights()
@@ -237,7 +274,7 @@ async def generate_signal(
         mtf_bias = await _get_15min_bias(symbol)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # ADAPTIVE SCORING (max ~14 pts)
+    # ADAPTIVE SCORING (max ~16 pts)
     # ─────────────────────────────────────────────────────────────────────────
     bull_score, bear_score = 0, 0
     r_bull, r_bear         = [], []
@@ -250,7 +287,7 @@ async def generate_signal(
     else:
         r_bull.append("⚠️ Structure SIDEWAYS")
 
-    # 2. EMA stack (2 pts)
+    # 2. EMA stack (2 pts — with partial credit for EMA9 alignment)
     if close > ema20 > ema50:
         bull_score += 2; r_bull.append(f"✅ Price>EMA20>EMA50 (full bull stack)")
     elif close < ema20 < ema50:
@@ -260,14 +297,20 @@ async def generate_signal(
     elif close < ema9 < ema20:
         bear_score += 1; r_bear.append("⚡ EMA9<EMA20 partial bear")
 
+    # 2b. EMA9 immediate trend (1 pt extra)
+    if close > ema9:
+        bull_score += 1; r_bull.append("✅ Price > EMA9 (immediate uptrend)")
+    elif close < ema9:
+        bear_score += 1; r_bear.append("✅ Price < EMA9 (immediate downtrend)")
+
     # 3. VWAP (1 pt)
     if close > vwap_val:
         bull_score += 1; r_bull.append(f"✅ Above VWAP {vwap_val:.0f}")
     else:
         bear_score += 1; r_bear.append(f"✅ Below VWAP {vwap_val:.0f}")
 
-    # 4. ADX direction (1 pt)
-    if adx_val >= 25:
+    # 4. ADX direction (1 pt — also give 1pt for WEAK_TREND with DI alignment)
+    if adx_val >= 20:
         if plus_di > minus_di:
             bull_score += 1; r_bull.append(f"✅ ADX={adx_val:.0f} +DI>{minus_di:.0f}")
         else:
@@ -323,8 +366,12 @@ async def generate_signal(
     else:
         r_bull.append("⚠️ 15min NEUTRAL — no MTF")
 
-    # 7. Volume (1 pt)
-    if vol_ok:
+    # 7. Volume (1 pt — with low-vol penalty instead of hard block)
+    if low_vol:
+        bull_score -= 1; bear_score -= 1
+        r_bull.append("⚠️ Low volume period — reduced conviction")
+        r_bear.append("⚠️ Low volume period — reduced conviction")
+    elif vol_ok:
         bull_score += 1; bear_score += 1
         r_bull.append("✅ Volume above average")
         r_bear.append("✅ Volume above average")
@@ -335,11 +382,15 @@ async def generate_signal(
     elif rsi_val < 25:
         bear_score -= 2; r_bear.append(f"🚫 RSI {rsi_val:.0f} oversold")
 
-    # 9. IV bonus (1 pt)
+    # 9. IV bonus (1 pt for LOW, penalty for HIGH)
     if iv_data["regime"] == "LOW_IV":
         bull_score += 1; bear_score += 1
         r_bull.append(f"✅ Low IV (IVR={iv_data['iv_rank']}) — cheap premium")
         r_bear.append(f"✅ Low IV — cheap premium")
+    elif iv_data["regime"] == "HIGH_IV":
+        bull_score -= 1; bear_score -= 1
+        r_bull.append(f"⚠️ High IV (IVR={iv_data['iv_rank']}) — expensive premium")
+        r_bear.append(f"⚠️ High IV — expensive premium")
 
     # 10. Global sentiment (1 pt bonus/penalty)
     s_signal = sentiment.get("signal", "NEUTRAL")

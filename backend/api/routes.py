@@ -97,6 +97,11 @@ async def bot_status(request: Request):
 async def update_bot_config(req: ConfigUpdateRequest, request: Request):
     bot     = request.app.state.bot_engine
     updates = {k: v for k, v in req.dict(exclude_none=True).items()}
+    # Normalize booleans to lowercase strings for DB consistency
+    # str(True) = "True" but bot_engine expects "true" — this caused BTST toggle bug
+    for k, v in updates.items():
+        if isinstance(v, bool):
+            updates[k] = "true" if v else "false"
     if updates:
         await bot.update_config(updates)
     return {"status": "updated", "changes": updates}
@@ -430,3 +435,61 @@ async def debug_upstox(endpoint: str, symbol: str = "NIFTY"):
             "sample_keys": list(sample.keys()),
             "sample_item": sample,
         }
+
+
+# ─── AI Advisor ───────────────────────────────────────────────────────────────
+
+@router.get("/ai/status")
+async def ai_status():
+    """Get AI advisor status."""
+    from intelligence.ai_advisor import get_ai_status
+    return get_ai_status()
+
+
+@router.get("/ai/history")
+async def ai_history(limit: int = 20):
+    """Get recent AI verdicts."""
+    from intelligence.ai_advisor import get_ai_history
+    return get_ai_history(limit)
+
+
+@router.post("/ai/toggle")
+async def toggle_ai(request: Request):
+    """Toggle AI on/off."""
+    from config import settings
+    current = getattr(settings, 'AI_ENABLED', False)
+    settings.AI_ENABLED = not current
+    return {"ai_enabled": settings.AI_ENABLED}
+
+
+class AIConfigRequest(BaseModel):
+    ai_enabled: Optional[bool] = None
+    ai_min_confidence: Optional[int] = None
+
+@router.post("/ai/config")
+async def update_ai_config(req: AIConfigRequest):
+    """Update AI configuration."""
+    from config import settings
+    if req.ai_enabled is not None:
+        settings.AI_ENABLED = req.ai_enabled
+    if req.ai_min_confidence is not None:
+        settings.AI_MIN_CONFIDENCE = req.ai_min_confidence
+    return {
+        "ai_enabled": settings.AI_ENABLED,
+        "ai_min_confidence": settings.AI_MIN_CONFIDENCE,
+    }
+
+
+# ─── Signal Decision Log ─────────────────────────────────────────────────────
+
+@router.get("/signals/log")
+async def signal_log(limit: int = 50):
+    """Get signal decision history."""
+    async with __import__('aiosqlite').connect("trading_bot.db") as db:
+        db.row_factory = __import__('aiosqlite').Row
+        cur = await db.execute(
+            "SELECT * FROM signals_log ORDER BY timestamp DESC LIMIT ?",
+            (limit,)
+        )
+        return [dict(r) for r in await cur.fetchall()]
+

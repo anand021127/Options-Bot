@@ -85,4 +85,14 @@ export const api = {
   debugUpstox: (endpoint: string, symbol = 'NIFTY') =>
     req(`/api/debug/upstox/${endpoint}?symbol=${symbol}`),
   getDebugLogs: () => req('/api/debug/logs'),
+
+  // ── AI Advisor ─────────────────────────────────────────────────────────────
+  getAIStatus:   () => req('/api/ai/status'),
+  getAIHistory:  (limit = 20) => req(`/api/ai/history?limit=${limit}`),
+  toggleAI:      () => req('/api/ai/toggle', { method: 'POST' }),
+  updateAIConfig:(data: object) =>
+    req('/api/ai/config', { method: 'POST', body: JSON.stringify(data) }),
+
+  // ── Signal Decision Log ────────────────────────────────────────────────────
+  getSignalLog:  (limit = 50) => req(`/api/signals/log?limit=${limit}`),
 };
