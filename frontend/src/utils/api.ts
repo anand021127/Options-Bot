@@ -71,7 +71,7 @@ export const api = {
   // ── Config ────────────────────────────────────────────────────────────────
   getConfig:    () => req('/api/config'),
   updateConfig: (data: object) =>
-    req('/api/config', { method: 'PUT', body: JSON.stringify(data) }),
+    req('/api/bot/config', { method: 'POST', body: JSON.stringify(data) }),
 
   // ── Notifications ─────────────────────────────────────────────────────────
   getNotifications:      (limit = 20, unreadOnly = false) =>
@@ -89,9 +89,11 @@ export const api = {
   // ── AI Advisor ─────────────────────────────────────────────────────────────
   getAIStatus:   () => req('/api/ai/status'),
   getAIHistory:  (limit = 20) => req(`/api/ai/history?limit=${limit}`),
+  getAIAnalysis: (symbol = 'NIFTY') => req(`/api/ai/analysis?symbol=${symbol}`),
   toggleAI:      () => req('/api/ai/toggle', { method: 'POST' }),
   updateAIConfig:(data: object) =>
     req('/api/ai/config', { method: 'POST', body: JSON.stringify(data) }),
+  getTradingDay: () => req('/api/market/trading-day'),
 
   // ── Signal Decision Log ────────────────────────────────────────────────────
   getSignalLog:  (limit = 50) => req(`/api/signals/log?limit=${limit}`),
