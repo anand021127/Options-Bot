@@ -1,28 +1,90 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { Brain, CheckCircle, XCircle, AlertTriangle, ToggleLeft, ToggleRight, RefreshCw, Zap } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  Brain, CheckCircle, XCircle, AlertTriangle, RefreshCw, Zap,
+  TrendingUp, TrendingDown, Minus, Activity, Target, Shield, BarChart3,
+} from 'lucide-react';
 import { api } from '@/utils/api';
 
-export default function AIInsightsPanel() {
-  const [status,  setStatus]  = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+interface MarketAnalysis {
+  market_outlook: string;
+  confidence: number;
+  analysis: string;
+  key_levels: string;
+  recommended_strategies: string[];
+  risk_warnings: string;
+  source: string;
+  timestamp: string;
+  symbol?: string;
+}
 
-  const fetchData = async () => {
+export default function AIInsightsPanel() {
+  const [status, setStatus]       = useState<any>(null);
+  const [history, setHistory]     = useState<any[]>([]);
+  const [analysis, setAnalysis]   = useState<MarketAnalysis | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const fetchData = useCallback(async () => {
     try {
       const [s, h] = await Promise.allSettled([api.getAIStatus(), api.getAIHistory(15)]);
-      if (s.status === 'fulfilled') setStatus(s.value);
+      if (s.status === 'fulfilled') {
+        setStatus(s.value);
+        // Use cached analysis from status if available
+        if (s.value?.last_analysis) setAnalysis(s.value.last_analysis);
+      }
       if (h.status === 'fulfilled') setHistory(h.value || []);
     } catch {} finally { setLoading(false); }
-  };
+  }, []);
 
-  useEffect(() => { fetchData(); const iv = setInterval(fetchData, 15000); return () => clearInterval(iv); }, []);
+  useEffect(() => { fetchData(); const iv = setInterval(fetchData, 15000); return () => clearInterval(iv); }, [fetchData]);
 
   const handleToggle = async () => {
     try {
       const r = await api.toggleAI();
       setStatus((p: any) => ({ ...p, enabled: r.ai_enabled, ready: r.ai_enabled && p?.has_key }));
     } catch {}
+  };
+
+  const handleAnalyze = async () => {
+    setAnalyzing(true);
+    try {
+      const result = await api.getAIAnalysis('NIFTY');
+      if (result) setAnalysis(result);
+    } catch {} finally { setAnalyzing(false); }
+  };
+
+  const getOutlookIcon = (outlook: string) => {
+    switch (outlook) {
+      case 'BULLISH':  return <TrendingUp  size={14} className="text-brand-green" />;
+      case 'BEARISH':  return <TrendingDown size={14} className="text-brand-red" />;
+      case 'CHOPPY':   return <Activity     size={14} className="text-brand-yellow" />;
+      default:         return <Minus        size={14} className="text-brand-muted" />;
+    }
+  };
+
+  const getOutlookColor = (outlook: string) => {
+    switch (outlook) {
+      case 'BULLISH':  return 'text-brand-green';
+      case 'BEARISH':  return 'text-brand-red';
+      case 'CHOPPY':   return 'text-brand-yellow';
+      default:         return 'text-brand-muted';
+    }
+  };
+
+  const getOutlookBg = (outlook: string) => {
+    switch (outlook) {
+      case 'BULLISH':  return 'bg-brand-green/10 border-brand-green/20';
+      case 'BEARISH':  return 'bg-brand-red/10 border-brand-red/20';
+      case 'CHOPPY':   return 'bg-brand-yellow/10 border-brand-yellow/20';
+      default:         return 'bg-brand-surface border-brand-border';
+    }
+  };
+
+  const getConfidenceColor = (conf: number) => {
+    if (conf >= 70) return 'text-brand-green';
+    if (conf >= 40) return 'text-brand-yellow';
+    return 'text-brand-red';
   };
 
   if (loading) return (
@@ -41,7 +103,7 @@ export default function AIInsightsPanel() {
             <Brain size={16} className="text-purple-400" />
             <div>
               <p className="font-display font-bold text-sm">AI Advisor</p>
-              <p className="text-brand-muted text-xs font-mono">Gemini-powered signal validation</p>
+              <p className="text-brand-muted text-xs font-mono">Gemini-powered market analysis & signal validation</p>
             </div>
           </div>
           <button onClick={handleToggle}
@@ -78,11 +140,113 @@ export default function AIInsightsPanel() {
         )}
       </div>
 
+      {/* Market Analysis Card — Proactive AI */}
+      <div className="bg-brand-card card-glow rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <BarChart3 size={14} className="text-purple-400" />
+            <p className="font-display font-bold text-sm">Market Analysis</p>
+          </div>
+          <button onClick={handleAnalyze} disabled={analyzing || !status?.ready}
+            className={`flex items-center gap-1 text-xs font-mono px-2.5 py-1 rounded-lg transition-all ${
+              analyzing ? 'bg-purple-500/20 text-purple-400' :
+              status?.ready ? 'bg-brand-surface text-brand-muted hover:text-purple-400 hover:bg-purple-500/10' :
+              'bg-brand-surface text-brand-muted/30 cursor-not-allowed'
+            }`}>
+            <RefreshCw size={10} className={analyzing ? 'animate-spin' : ''} />
+            {analyzing ? 'Analyzing...' : 'Analyze Now'}
+          </button>
+        </div>
+
+        {analysis && analysis.source !== 'fallback' ? (
+          <div className="space-y-3">
+            {/* Outlook Badge */}
+            <div className={`rounded-xl border p-3 ${getOutlookBg(analysis.market_outlook)}`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  {getOutlookIcon(analysis.market_outlook)}
+                  <span className={`text-sm font-display font-bold ${getOutlookColor(analysis.market_outlook)}`}>
+                    {analysis.market_outlook}
+                  </span>
+                  {analysis.symbol && (
+                    <span className="text-brand-muted text-xs font-mono">{analysis.symbol}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-xs font-mono font-bold ${getConfidenceColor(analysis.confidence)}`}>
+                    {analysis.confidence}%
+                  </span>
+                  <span className="text-brand-muted/50 text-xs font-mono">conf</span>
+                </div>
+              </div>
+              <p className="text-brand-text text-xs font-mono leading-relaxed">
+                {analysis.analysis}
+              </p>
+            </div>
+
+            {/* Key Levels & Strategies */}
+            <div className="grid grid-cols-2 gap-2">
+              {analysis.key_levels && (
+                <div className="bg-brand-surface rounded-xl p-2.5">
+                  <div className="flex items-center gap-1 mb-1">
+                    <Target size={10} className="text-purple-400" />
+                    <span className="text-brand-muted text-xs font-mono">Key Levels</span>
+                  </div>
+                  <p className="text-brand-text text-xs font-mono leading-relaxed">
+                    {analysis.key_levels}
+                  </p>
+                </div>
+              )}
+              {analysis.recommended_strategies?.length > 0 && (
+                <div className="bg-brand-surface rounded-xl p-2.5">
+                  <div className="flex items-center gap-1 mb-1.5">
+                    <Zap size={10} className="text-purple-400" />
+                    <span className="text-brand-muted text-xs font-mono">Strategies</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {analysis.recommended_strategies.map((s, i) => (
+                      <span key={i} className="text-xs font-mono bg-purple-500/15 text-purple-300 px-1.5 py-0.5 rounded">
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Risk Warnings */}
+            {analysis.risk_warnings && (
+              <div className="bg-brand-red/5 border border-brand-red/15 rounded-xl p-2.5">
+                <div className="flex items-center gap-1 mb-1">
+                  <Shield size={10} className="text-brand-red" />
+                  <span className="text-brand-red text-xs font-mono font-bold">Risk Warning</span>
+                </div>
+                <p className="text-brand-muted text-xs font-mono">{analysis.risk_warnings}</p>
+              </div>
+            )}
+
+            {/* Timestamp */}
+            <p className="text-brand-muted/40 text-xs font-mono text-right">
+              {analysis.timestamp ? new Date(analysis.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''} · {analysis.source}
+            </p>
+          </div>
+        ) : (
+          <div className="text-center py-4">
+            <Brain size={24} className="text-purple-400 mx-auto mb-2 opacity-30" />
+            <p className="text-brand-muted text-xs font-mono">
+              {status?.ready
+                ? 'Click "Analyze Now" or wait for automatic analysis during market hours'
+                : 'Enable AI and set GEMINI_API_KEY to use market analysis'}
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* Recent Verdicts */}
       {history.length > 0 && (
         <div className="bg-brand-card card-glow rounded-2xl p-4">
           <div className="flex items-center justify-between mb-3">
-            <p className="font-display font-bold text-sm">Recent AI Verdicts</p>
+            <p className="font-display font-bold text-sm">Recent AI Activity</p>
             <button onClick={fetchData} className="text-brand-muted hover:text-purple-400 transition-all">
               <RefreshCw size={12} />
             </button>
@@ -90,32 +254,35 @@ export default function AIInsightsPanel() {
           <div className="space-y-2">
             {history.slice(0, 10).map((v: any, i: number) => (
               <div key={i} className={`bg-brand-surface rounded-xl p-3 border ${
-                v.approved
-                  ? 'border-brand-green/20'
-                  : 'border-brand-yellow/30'
+                v.type === 'analysis'
+                  ? 'border-purple-500/20'
+                  : v.approved
+                    ? 'border-brand-green/20'
+                    : 'border-brand-yellow/30'
               }`}>
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-1.5">
-                    {v.approved
-                      ? <CheckCircle size={12} className="text-brand-green" />
-                      : <AlertTriangle size={12} className="text-brand-yellow" />}
+                    {v.type === 'analysis'
+                      ? <BarChart3 size={12} className="text-purple-400" />
+                      : v.approved
+                        ? <CheckCircle size={12} className="text-brand-green" />
+                        : <AlertTriangle size={12} className="text-brand-yellow" />}
                     <span className={`text-xs font-mono font-bold ${
+                      v.type === 'analysis' ? 'text-purple-400' :
                       v.approved ? 'text-brand-green' : 'text-brand-yellow'
                     }`}>
-                      {v.approved ? 'APPROVED' : 'CAUTION'}
+                      {v.type === 'analysis' ? 'ANALYSIS' : v.approved ? 'APPROVED' : 'CAUTION'}
                     </span>
                     <span className="text-brand-muted text-xs font-mono">
                       {v.signal_type} {v.symbol}
                     </span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <span className={`text-xs font-mono font-bold ${
-                      v.confidence >= 70 ? 'text-brand-green' : v.confidence >= 40 ? 'text-brand-yellow' : 'text-brand-red'
-                    }`}>
+                    <span className={`text-xs font-mono font-bold ${getConfidenceColor(v.confidence || 0)}`}>
                       {v.confidence}%
                     </span>
                     <span className="text-brand-muted text-xs font-mono">
-                      {v.source === 'cache' ? '(cached)' : `${v.latency_ms}ms`}
+                      {v.source === 'cache' ? '(cached)' : v.latency_ms ? `${v.latency_ms}ms` : ''}
                     </span>
                   </div>
                 </div>
@@ -124,7 +291,7 @@ export default function AIInsightsPanel() {
                   <p className="text-brand-muted text-xs font-mono mt-0.5">⚠️ {v.risk_notes}</p>
                 )}
                 <p className="text-brand-muted/50 text-xs font-mono mt-1">
-                  {new Date(v.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                  {v.timestamp ? new Date(v.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}
                 </p>
               </div>
             ))}
@@ -132,11 +299,11 @@ export default function AIInsightsPanel() {
         </div>
       )}
 
-      {history.length === 0 && status?.ready && (
+      {history.length === 0 && !analysis && status?.ready && (
         <div className="bg-brand-card card-glow rounded-2xl p-4 text-center">
           <Brain size={24} className="text-purple-400 mx-auto mb-2 opacity-50" />
           <p className="text-brand-muted text-xs font-mono">
-            No AI verdicts yet. Start the bot and AI will analyze signals automatically.
+            No AI activity yet. Start the bot and AI will analyze the market automatically during trading hours.
           </p>
         </div>
       )}

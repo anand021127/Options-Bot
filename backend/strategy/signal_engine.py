@@ -20,7 +20,7 @@ from strategy.indicators import (
     compute_all_indicators, adx, market_structure, market_regime,
     detect_breakout, detect_confirmed_breakout, detect_retest,
     detect_pullback_entry, vwap_bounce, volume_confirmation,
-    is_fake_spike, is_low_volume_period, get_sr_levels,
+    is_fake_spike, is_persistent_fake_spike, is_low_volume_period, get_sr_levels,
     iv_rank_proxy, atr_sl_target, select_strike_type, volume_trend,
 )
 # ── Data layer: Upstox real-time only — no yfinance fallback ──────────────────
@@ -28,10 +28,11 @@ from data.upstox_market import (
     fetch_ohlcv,
     get_live_price  as fetch_live_price,   # real-time from WS/REST (Upstox only)
     get_atm_option,                         # real-time option LTP from Upstox only
+    is_market_open,
 )
 from intelligence.market_intel import (
     is_high_impact_event_today, is_no_trade_day,
-    get_global_sentiment,
+    get_global_sentiment, is_trading_day,
 )
 from intelligence.strategy_intel import (
     get_strategy_weights, is_strategy_enabled, classify_trade_strategy,
@@ -128,6 +129,20 @@ async def generate_signal(
         "timestamp":      datetime.now().isoformat(),
     }
 
+    # ── GATE 0: Market must be open (weekend + holiday + hours) ────────────────
+    trading_day, td_reason = await is_trading_day()
+    if not trading_day:
+        result["reasons"].append(f"🚫 {td_reason} — market closed")
+        result["blocked_by"] = "MARKET_CLOSED"
+        result["gate_log"].append(f"GATE0_MARKET: ❌ {td_reason}")
+        return result
+    if not is_market_open():
+        result["reasons"].append("🚫 Outside market hours (09:15–15:30)")
+        result["blocked_by"] = "MARKET_CLOSED"
+        result["gate_log"].append("GATE0_MARKET: ❌ Outside trading hours")
+        return result
+    result["gate_log"].append("GATE0_MARKET: ✅ market open")
+
     # ── GATE 1: High-impact events ────────────────────────────────────────────
     if is_high_impact_event_today():
         result["reasons"].append("🚫 High-impact event today — trading suspended")
@@ -183,12 +198,15 @@ async def generate_signal(
     latest = df5.iloc[-1]
 
     # ── GATE 6: Candle quality ────────────────────────────────────────────────
-    if use_spike and is_fake_spike(df5):
-        result["reasons"].append("🚫 Fake spike candle — wick > 4× body")
+    if use_spike and is_persistent_fake_spike(df5):
+        result["reasons"].append("🚫 Persistent fake spikes — 2/3 candles wick-dominated")
         result["blocked_by"] = "FAKE_SPIKE"
-        result["gate_log"].append("GATE6_SPIKE: ❌ fake spike")
+        result["gate_log"].append("GATE6_SPIKE: ❌ persistent fake spike (2/3 candles)")
         return result
-    result["gate_log"].append("GATE6_SPIKE: ✅")
+    if use_spike and is_fake_spike(df5):
+        result["gate_log"].append("GATE6_SPIKE: ⚠️ single wick candle — allowed (warning only)")
+    else:
+        result["gate_log"].append("GATE6_SPIKE: ✅")
 
     # ── GATE 7: Low volume (advisory — don't hard-block, just note) ──────────
     low_vol = False

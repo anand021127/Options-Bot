@@ -32,6 +32,8 @@ export default function SignalDecisionLog() {
   useEffect(() => { fetchSignals(); const iv = setInterval(fetchSignals, 10000); return () => clearInterval(iv); }, [fetchSignals]);
 
   const filtered = signals.filter(s => {
+    // Never show market-closed signals in the UI (noise from weekends/holidays)
+    if (s.blocked_by === 'MARKET_CLOSED') return false;
     if (filter === 'acted') return s.acted === 1;
     if (filter === 'blocked') return s.blocked_by && s.blocked_by !== '';
     return true;

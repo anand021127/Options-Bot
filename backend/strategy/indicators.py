@@ -347,15 +347,38 @@ def detect_pullback_entry(df: pd.DataFrame) -> Optional[str]:
 
 # ─── Quality Filters ──────────────────────────────────────────────────────────
 
-def is_fake_spike(df: pd.DataFrame) -> bool:
-    """Detect wick-dominated candle (possible manipulation). Ratio 4x = very extreme only."""
-    c         = df.iloc[-1]
-    body      = abs(float(c["close"]) - float(c["open"]))
-    wick_up   = float(c["high"])  - max(float(c["close"]), float(c["open"]))
-    wick_down = min(float(c["close"]), float(c["open"])) - float(c["low"])
+def _is_single_candle_fake(candle) -> bool:
+    """Check if a single candle has wick > 4× body (wick-dominated)."""
+    body      = abs(float(candle["close"]) - float(candle["open"]))
+    wick_up   = float(candle["high"])  - max(float(candle["close"]), float(candle["open"]))
+    wick_down = min(float(candle["close"]), float(candle["open"])) - float(candle["low"])
     if body < 0.01:
         return False   # doji candles are valid — don't block
     return (wick_up + wick_down) > (body * 4)
+
+
+def is_fake_spike(df: pd.DataFrame) -> bool:
+    """Detect wick-dominated candle on LAST candle only (legacy compat)."""
+    return _is_single_candle_fake(df.iloc[-1])
+
+
+def is_persistent_fake_spike(df: pd.DataFrame) -> bool:
+    """
+    Multi-candle fake spike check — much more reliable than single-candle.
+    Only blocks if 2 of last 3 candles are wick-dominated (wick > 4× body).
+
+    Single-candle wicks are NORMAL during volatile market moves — blocking on
+    a single wick caused the bot to miss all trades during big Nifty moves.
+    Requiring 2/3 candles ensures we only block genuine manipulation/noise,
+    not healthy market volatility.
+    """
+    if len(df) < 3:
+        return False
+    fake_count = sum(
+        1 for i in range(-3, 0)
+        if _is_single_candle_fake(df.iloc[i])
+    )
+    return fake_count >= 2
 
 
 def is_low_volume_period(df: pd.DataFrame) -> bool:

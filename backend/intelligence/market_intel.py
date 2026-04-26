@@ -1,13 +1,15 @@
 """
-Market Intelligence Module — v3
+Market Intelligence Module — v3.2
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Prevents trading during adverse market conditions:
 
   1. Event calendar — RBI, Budget, earnings, FOMC
-  2. Global sentiment — S&P 500 proxy via yfinance
+  2. Global sentiment — S&P 500 proxy via Stooq
   3. No-trade day detection — auto-detect dead/choppy days
-  4. Expiry day detection — Thursday weekly
+  4. Expiry day detection — from Upstox instruments API
   5. Gap analysis — overnight position risk assessment
+  6. NSE holiday detection — fetched from live API (never hardcoded)
+  7. Trading day check — weekend + holiday awareness
 
 All functions are fast (cached) and fallback gracefully.
 """
@@ -15,11 +17,155 @@ All functions are fast (cached) and fallback gracefully.
 import asyncio
 import pandas as pd
 from datetime import datetime, date, timedelta
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from loguru import logger
 from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
+
+
+# ─── NSE Holiday Detection (Live API — never hardcoded) ──────────────────────
+
+_nse_holidays_cache: Set[str] = set()      # "YYYY-MM-DD" strings
+_nse_holidays_fetched_date: Optional[date] = None   # when we last fetched
+
+
+async def _fetch_nse_holidays() -> Set[str]:
+    """
+    Fetch NSE trading holidays from live API sources.
+    Tries multiple sources for reliability:
+      1. NSE India official API
+      2. Upstox exchange status (if token available)
+    Caches for the entire day — holidays don't change mid-day.
+    """
+    global _nse_holidays_cache, _nse_holidays_fetched_date
+
+    today = date.today()
+    if _nse_holidays_fetched_date == today and _nse_holidays_cache:
+        return _nse_holidays_cache
+
+    holidays: Set[str] = set()
+
+    # Source 1: NSE India official holiday list
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://www.nseindia.com/api/holiday-master",
+                params={"type": "trading"},
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Accept": "application/json",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Referer": "https://www.nseindia.com/resources/exchange-communication-holidays",
+                },
+            )
+
+        if resp.status_code == 200:
+            data = resp.json()
+            # NSE returns {"CM": [...], "FO": [...], ...}
+            # We care about FO (Futures & Options) holidays
+            fo_holidays = data.get("FO", data.get("CM", []))
+            if isinstance(fo_holidays, list):
+                for h in fo_holidays:
+                    # NSE format: {"tradingDate": "18-Apr-2026", "weekDay": ...}
+                    raw_date = h.get("tradingDate", "")
+                    if raw_date:
+                        try:
+                            dt = datetime.strptime(raw_date, "%d-%b-%Y").date()
+                            holidays.add(dt.isoformat())
+                        except ValueError:
+                            pass
+            logger.info(f"✅ NSE holidays fetched: {len(holidays)} trading holidays for FO")
+    except Exception as e:
+        logger.warning(f"NSE holiday API failed: {e}")
+
+    # Source 2: Upstox market status (fallback)
+    if not holidays:
+        try:
+            import httpx
+            from api.upstox_auth import get_upstox_token
+            token = await get_upstox_token()
+            if token:
+                async with httpx.AsyncClient(timeout=8) as client:
+                    resp = await client.get(
+                        "https://api.upstox.com/v2/market/holidays",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Accept": "application/json",
+                        },
+                    )
+                if resp.status_code == 200:
+                    data = resp.json().get("data", [])
+                    if isinstance(data, list):
+                        for h in data:
+                            raw_date = h.get("date", h.get("holiday_date", ""))
+                            if raw_date:
+                                try:
+                                    # Try ISO format first, then other formats
+                                    if "-" in raw_date and len(raw_date) == 10:
+                                        holidays.add(raw_date)
+                                    else:
+                                        dt = datetime.strptime(raw_date, "%d-%b-%Y").date()
+                                        holidays.add(dt.isoformat())
+                                except ValueError:
+                                    pass
+                    logger.info(f"✅ Upstox holidays fetched: {len(holidays)} holidays")
+        except Exception as e:
+            logger.debug(f"Upstox holiday API fallback failed: {e}")
+
+    if holidays:
+        _nse_holidays_cache = holidays
+        _nse_holidays_fetched_date = today
+    else:
+        logger.warning("⚠️ Could not fetch holidays from any source — weekend check still active")
+
+    return _nse_holidays_cache
+
+
+async def is_nse_holiday(check_date: date = None) -> Tuple[bool, str]:
+    """
+    Check if a given date is an NSE holiday.
+    Returns (is_holiday, reason).
+    """
+    if check_date is None:
+        check_date = date.today()
+
+    date_str = check_date.isoformat()
+    holidays = await _fetch_nse_holidays()
+
+    if date_str in holidays:
+        return True, f"NSE holiday: {date_str}"
+    return False, ""
+
+
+async def is_trading_day(check_date: date = None) -> Tuple[bool, str]:
+    """
+    Check if today is a valid trading day:
+      1. Not a weekend (Saturday/Sunday)
+      2. Not an NSE holiday (fetched from live API)
+
+    Returns (is_trading_day, reason_if_not).
+    """
+    if check_date is None:
+        check_date = date.today()
+
+    # Weekend check
+    if check_date.weekday() >= 5:
+        day_name = "Saturday" if check_date.weekday() == 5 else "Sunday"
+        return False, f"Weekend ({day_name})"
+
+    # NSE holiday check (from live API)
+    is_holiday, reason = await is_nse_holiday(check_date)
+    if is_holiday:
+        return False, reason
+
+    return True, "Trading day"
+
+
+def get_nse_holidays_cached() -> List[str]:
+    """Return cached holidays for dashboard display."""
+    return sorted(_nse_holidays_cache)
 
 # ─── Manual Event Calendar ────────────────────────────────────────────────────
 # Add/remove dates as needed. Format: "YYYY-MM-DD"
@@ -284,13 +430,14 @@ async def analyse_gap(symbol: str = "NIFTY") -> Dict:
 async def get_market_status(symbol: str = "NIFTY") -> Dict:
     """
     Full market status for dashboard display.
-    Returns regime, IV condition, global sentiment, event flags.
+    Returns regime, IV condition, global sentiment, event flags, holiday info.
     """
     sentiment    = await get_global_sentiment()
     no_trade, reason = await is_no_trade_day(symbol)
     event_today  = is_high_impact_event_today()
     expiry       = is_expiry_day(symbol)
     dte          = days_to_expiry(symbol)
+    trading_day, trading_day_reason = await is_trading_day()
 
     return {
         "global_sentiment":    sentiment,
@@ -300,6 +447,9 @@ async def get_market_status(symbol: str = "NIFTY") -> Dict:
         "is_expiry_day":       expiry,
         "days_to_expiry":      dte,
         "blocked_dates":       get_blocked_dates(),
-        "trading_allowed":     not (no_trade or event_today),
+        "is_trading_day":      trading_day,
+        "trading_day_reason":  trading_day_reason,
+        "nse_holidays":        get_nse_holidays_cached(),
+        "trading_allowed":     trading_day and not (no_trade or event_today),
         "timestamp":           datetime.now().isoformat(),
     }

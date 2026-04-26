@@ -278,4 +278,206 @@ def get_ai_status() -> Dict:
         "cache_size": len(_ai_cache),
         "history_count": len(_ai_history),
         "last_verdict": _ai_history[0] if _ai_history else None,
+        "last_analysis": _market_analysis_cache.get("data"),
     }
+
+
+# ── Proactive Market Analysis ─────────────────────────────────────────────────
+# This runs independently — AI analyzes the market even when no signal is generated
+
+_market_analysis_cache: Dict = {}
+_MARKET_ANALYSIS_TTL = 300   # 5 minutes
+
+
+async def analyze_market_conditions(
+    symbol: str = "NIFTY",
+    indicators: Dict = None,
+) -> Dict:
+    """
+    AI proactively analyzes current market conditions.
+    Called periodically by the bot, NOT tied to signal generation.
+    This is what powers the AI Advisor tab on the dashboard.
+
+    Returns:
+    {
+        "market_outlook": "BULLISH" | "BEARISH" | "NEUTRAL" | "CHOPPY",
+        "confidence": 0-100,
+        "analysis": "Market analysis summary...",
+        "key_levels": "Important levels to watch...",
+        "recommended_strategies": ["BREAKOUT", "PULLBACK", ...],
+        "risk_warnings": "Any risks to note...",
+        "source": "gemini" | "fallback",
+        "timestamp": "...",
+    }
+    """
+    from config import settings
+
+    now = time.time()
+    cached = _market_analysis_cache.get("data")
+    if cached and (now - _market_analysis_cache.get("_ts", 0)) < _MARKET_ANALYSIS_TTL:
+        return cached
+
+    if not getattr(settings, 'AI_ENABLED', False):
+        return _analysis_fallback("AI disabled")
+
+    api_key = getattr(settings, 'GEMINI_API_KEY', '')
+    if not api_key:
+        return _analysis_fallback("No GEMINI_API_KEY")
+
+    if not indicators:
+        return _analysis_fallback("No indicator data provided")
+
+    prompt = _build_analysis_prompt(symbol, indicators)
+
+    try:
+        result = await _call_gemini_analysis(api_key, prompt)
+        result["symbol"] = symbol
+        result["source"] = "gemini"
+        result["timestamp"] = datetime.now().isoformat()
+        result["latency_ms"] = 0  # set by caller if needed
+
+        _market_analysis_cache["data"] = result
+        _market_analysis_cache["_ts"] = now
+
+        # Also add to AI history for dashboard visibility
+        _ai_history.insert(0, {
+            "type": "analysis",
+            "symbol": symbol,
+            "signal_type": f"ANALYSIS_{result.get('market_outlook', 'NEUTRAL')}",
+            "approved": True,
+            "confidence": result.get("confidence", 50),
+            "reasoning": result.get("analysis", "")[:200],
+            "risk_notes": result.get("risk_warnings", ""),
+            "source": "gemini",
+            "timestamp": datetime.now().isoformat(),
+        })
+        if len(_ai_history) > _AI_HISTORY_MAX:
+            _ai_history.pop()
+
+        logger.info(
+            f"🤖 AI ANALYSIS | {symbol} | Outlook={result.get('market_outlook', '?')} | "
+            f"Conf={result.get('confidence', 0)}%"
+        )
+        return result
+
+    except Exception as e:
+        logger.warning(f"AI market analysis error: {e}")
+        return _analysis_fallback(f"Error: {str(e)[:60]}")
+
+
+def _analysis_fallback(reason: str) -> Dict:
+    """Fallback when AI analysis is unavailable."""
+    return {
+        "market_outlook": "NEUTRAL",
+        "confidence": 0,
+        "analysis": f"AI analysis unavailable ({reason})",
+        "key_levels": "",
+        "recommended_strategies": [],
+        "risk_warnings": "",
+        "source": "fallback",
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+def _build_analysis_prompt(symbol: str, indicators: Dict) -> str:
+    """Build market analysis prompt for Gemini."""
+    close = indicators.get("close", 0)
+    ema9 = indicators.get("ema9", 0)
+    ema20 = indicators.get("ema20", 0)
+    ema50 = indicators.get("ema50", 0)
+    vwap = indicators.get("vwap", 0)
+    rsi = indicators.get("rsi", 50)
+    adx = indicators.get("adx", 0)
+    atr = indicators.get("atr", 0)
+    structure = indicators.get("structure", "UNKNOWN")
+    regime = indicators.get("regime", "UNKNOWN")
+    vol_ok = indicators.get("vol_ok", False)
+    sr = indicators.get("sr", {})
+    supports = sr.get("support", [])
+    resistances = sr.get("resistance", [])
+
+    return f"""You are a professional Indian market analyst reviewing real-time data for {symbol} index options trading.
+
+CURRENT MARKET DATA:
+- Price: ₹{close:.0f}
+- EMA9: ₹{ema9:.0f} | EMA20: ₹{ema20:.0f} | EMA50: ₹{ema50:.0f}
+- VWAP: ₹{vwap:.0f}
+- RSI: {rsi:.1f} | ADX: {adx:.1f} | ATR: {atr:.2f}
+- Market Structure: {structure} | Regime: {regime}
+- Volume: {'Above Average' if vol_ok else 'Below Average'}
+- Key Support Levels: {supports[:3]}
+- Key Resistance Levels: {resistances[:3]}
+
+TASK: Analyze this market data and provide a comprehensive trading outlook. Respond in EXACTLY this JSON format:
+{{
+  "market_outlook": "BULLISH" or "BEARISH" or "NEUTRAL" or "CHOPPY",
+  "confidence": 0-100,
+  "analysis": "2-3 sentence market analysis with key observations",
+  "key_levels": "Important support/resistance levels to watch",
+  "recommended_strategies": ["BREAKOUT", "PULLBACK", "VWAP", "RETEST"],
+  "risk_warnings": "Any risks or warnings (empty string if none)"
+}}
+
+GUIDELINES:
+- Be practical and actionable for options day-trading
+- If ADX > 20 with clear DI direction, market is tradeable
+- For Indian indices: ATR of 0.5-1.5% is normal intraday
+- Only recommend strategies that match current conditions
+- Risk warnings should mention specific technical concerns"""
+
+
+async def _call_gemini_analysis(api_key: str, prompt: str) -> Dict:
+    """Call Gemini for market analysis."""
+    import httpx
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.3,
+            "maxOutputTokens": 512,
+            "responseMimeType": "application/json",
+        },
+    }
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(url, json=payload)
+
+    if resp.status_code != 200:
+        raise ValueError(f"Gemini API {resp.status_code}: {resp.text[:200]}")
+
+    data = resp.json()
+    try:
+        candidates = data.get("candidates", [])
+        if not candidates:
+            raise ValueError("No candidates")
+
+        text = candidates[0]["content"]["parts"][0]["text"]
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+
+        result = json.loads(text)
+        return {
+            "market_outlook": str(result.get("market_outlook", "NEUTRAL")).upper(),
+            "confidence": max(0, min(100, int(result.get("confidence", 50)))),
+            "analysis": str(result.get("analysis", ""))[:300],
+            "key_levels": str(result.get("key_levels", ""))[:200],
+            "recommended_strategies": list(result.get("recommended_strategies", [])),
+            "risk_warnings": str(result.get("risk_warnings", ""))[:200],
+        }
+    except (json.JSONDecodeError, KeyError, IndexError) as e:
+        logger.warning(f"Gemini analysis parse error: {e}")
+        return {
+            "market_outlook": "NEUTRAL",
+            "confidence": 30,
+            "analysis": "AI response could not be parsed",
+            "key_levels": "",
+            "recommended_strategies": [],
+            "risk_warnings": "",
+        }
+
