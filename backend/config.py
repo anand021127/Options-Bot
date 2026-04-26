@@ -60,6 +60,14 @@ class Settings(BaseSettings):
     NO_TRADE_DAY_AUTO:        bool = True
     EVENT_CALENDAR_MANUAL:    bool = True
 
+    # Morning Intelligence Engine
+    MORNING_BIAS_ENABLED:             bool  = False    # opt-in — must explicitly enable
+    MORNING_BIAS_MODE:                str   = "SMART"  # STRICT | SMART | FREE
+    MORNING_BIAS_SKIP_MINUTES:        int   = 10       # skip first N min after 09:15
+    MORNING_BIAS_MIN_SCORE:           int   = 4        # ±score threshold for bias direction
+    MORNING_BIAS_VIX_SPIKE:           float = 25.0     # VIX above this → auto-skip
+    MORNING_BIAS_SMART_OVERRIDE_SCORE: int  = 8        # signal score to override NO_TRADE in SMART mode
+
     # Safety
     HARD_STOP_ON_API_FAIL:      bool = True
     HARD_STOP_ON_DATA_MISMATCH: bool = True

@@ -53,6 +53,13 @@ class ConfigUpdateRequest(BaseModel):
     global_sentiment_enabled: Optional[bool] = None
     no_trade_day_auto:      Optional[bool]  = None
     event_block_enabled:    Optional[bool]  = None
+    # Morning Intelligence Engine
+    morning_bias_enabled:   Optional[bool]  = None
+    morning_bias_mode:      Optional[str]   = None   # STRICT | SMART | FREE
+    morning_bias_skip_minutes: Optional[int] = None
+    morning_bias_min_score: Optional[int]   = None
+    morning_bias_vix_spike: Optional[float] = None
+    morning_bias_smart_override_score: Optional[int] = None
 
 class FiltersRequest(BaseModel):
     filters: Dict[str, Any]
@@ -273,6 +280,36 @@ async def remove_event(date: str):
     return {"status": "removed", "date": date}
 
 
+# ─── Morning Market Intelligence Engine ──────────────────────────────────────
+
+@router.get("/intelligence/morning-bias/{symbol}")
+async def morning_bias(symbol: str):
+    """Get morning market bias analysis for a symbol."""
+    from intelligence.morning_bias import get_morning_bias
+    return await get_morning_bias(symbol)
+
+
+@router.get("/intelligence/vix")
+async def india_vix():
+    """Get current India VIX data."""
+    from intelligence.morning_bias import get_india_vix
+    return await get_india_vix()
+
+
+@router.get("/intelligence/pcr/{symbol}")
+async def pcr_data(symbol: str):
+    """Get Put-Call Ratio computed from option chain OI."""
+    from intelligence.morning_bias import compute_pcr
+    return await compute_pcr(symbol)
+
+
+@router.get("/intelligence/fii-dii")
+async def fii_dii():
+    """Get latest FII/DII activity data."""
+    from intelligence.morning_bias import get_fii_dii
+    return await get_fii_dii()
+
+
 # ─── Signal ───────────────────────────────────────────────────────────────────
 
 @router.get("/signal/{symbol}")
@@ -465,6 +502,71 @@ async def debug_upstox(endpoint: str, symbol: str = "NIFTY"):
             "sample_keys": list(sample.keys()),
             "sample_item": sample,
         }
+
+
+# ─── Morning Bias Debug Endpoints ─────────────────────────────────────────────
+
+@router.get("/debug/morning-bias/{symbol}")
+async def debug_morning_bias(symbol: str):
+    """
+    Full debug output for morning bias engine.
+    Shows all components, cache state, settings, and timing.
+    """
+    from intelligence.morning_bias import get_morning_bias_debug
+    return await get_morning_bias_debug(symbol)
+
+
+@router.get("/debug/morning-bias-component/{component}")
+async def debug_morning_bias_component(component: str, symbol: str = "NIFTY"):
+    """
+    Test individual morning bias components.
+    Components: pcr, vix, fii_dii, technical, gap, sentiment, bias
+    """
+    component = component.lower()
+    valid = {"pcr", "vix", "fii_dii", "technical", "gap", "sentiment", "bias"}
+    if component not in valid:
+        raise HTTPException(404, f"Unknown component '{component}'. Valid: {sorted(valid)}")
+
+    import time
+    t0 = time.time()
+
+    if component == "pcr":
+        from intelligence.morning_bias import compute_pcr
+        data = await compute_pcr(symbol)
+    elif component == "vix":
+        from intelligence.morning_bias import get_india_vix
+        data = await get_india_vix()
+    elif component == "fii_dii":
+        from intelligence.morning_bias import get_fii_dii
+        data = await get_fii_dii()
+    elif component == "technical":
+        from intelligence.morning_bias import get_technical_levels
+        data = await get_technical_levels(symbol)
+    elif component == "gap":
+        from intelligence.market_intel import analyse_gap
+        data = await analyse_gap(symbol)
+    elif component == "sentiment":
+        from intelligence.market_intel import get_global_sentiment
+        data = await get_global_sentiment()
+    elif component == "bias":
+        from intelligence.morning_bias import get_morning_bias
+        data = await get_morning_bias(symbol)
+    else:
+        data = {}
+
+    return {
+        "component": component,
+        "symbol": symbol,
+        "data": data,
+        "latency_ms": round((time.time() - t0) * 1000, 1),
+    }
+
+
+@router.post("/debug/morning-bias/clear-cache")
+async def debug_clear_morning_bias_cache():
+    """Clear all morning bias caches for fresh testing."""
+    from intelligence.morning_bias import clear_morning_bias_cache
+    return clear_morning_bias_cache()
 
 
 # ─── AI Advisor ───────────────────────────────────────────────────────────────

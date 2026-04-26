@@ -182,6 +182,22 @@ class BotEngine:
             "use_spike_filter":  _parse_bool(cfg.get("use_spike_filter",  "true"), default=True),
         }
 
+        # Morning bias — runtime-configurable from dashboard
+        if "morning_bias_enabled" in cfg:
+            settings.MORNING_BIAS_ENABLED = _parse_bool(cfg["morning_bias_enabled"])
+        if "morning_bias_mode" in cfg:
+            mode_val = str(cfg["morning_bias_mode"]).strip().upper()
+            if mode_val in ("STRICT", "SMART", "FREE"):
+                settings.MORNING_BIAS_MODE = mode_val
+        if "morning_bias_skip_minutes" in cfg:
+            settings.MORNING_BIAS_SKIP_MINUTES = int(cfg["morning_bias_skip_minutes"])
+        if "morning_bias_min_score" in cfg:
+            settings.MORNING_BIAS_MIN_SCORE = int(cfg["morning_bias_min_score"])
+        if "morning_bias_vix_spike" in cfg:
+            settings.MORNING_BIAS_VIX_SPIKE = float(cfg["morning_bias_vix_spike"])
+        if "morning_bias_smart_override_score" in cfg:
+            settings.MORNING_BIAS_SMART_OVERRIDE_SCORE = int(cfg["morning_bias_smart_override_score"])
+
     # ── Signal loop ───────────────────────────────────────────────────────────
 
     async def _signal_loop(self):
@@ -240,6 +256,35 @@ class BotEngine:
         if len(self.open_trades) >= self.max_open_trades:
             return
 
+        # ── Morning Bias pre-check (optional — only if enabled) ──────────
+        morning_bias_data = None
+        if settings.MORNING_BIAS_ENABLED:
+            try:
+                from intelligence.morning_bias import check_morning_bias_gate
+                bias_ok, bias_reason, morning_bias_data = await check_morning_bias_gate(
+                    self.symbol, signal_score=0,   # no signal yet
+                )
+                # Broadcast bias data for dashboard
+                if morning_bias_data:
+                    await _broadcast("morning_bias", morning_bias_data)
+
+                gate_mode = morning_bias_data.get("gate_mode", "SMART") if morning_bias_data else "SMART"
+
+                # In STRICT mode, block immediately if bias says NO_TRADE
+                if not bias_ok and gate_mode == "STRICT":
+                    logger.info(f"🌅 Morning bias BLOCKED: {bias_reason}")
+                    await _broadcast("signal_decision", {
+                        "symbol": self.symbol, "signal_type": "NO_TRADE",
+                        "blocked_by": "MORNING_BIAS_STRICT",
+                        "gate_log": [f"MORNING_BIAS: ❌ {bias_reason}"],
+                        "reasons": [bias_reason], "timestamp": now_ist_iso(),
+                    })
+                    return
+
+                logger.info(f"🌅 Morning bias: {bias_reason}")
+            except Exception as e:
+                logger.debug(f"Morning bias skipped: {e}")
+
         try:
             signal = await generate_signal(self.symbol, self.min_score, self.filters)
             self.api_fail_count = 0
@@ -252,6 +297,15 @@ class BotEngine:
 
         # ── Log and broadcast gate-by-gate decision ───────────────────────
         gate_log = signal.get("gate_log", [])
+
+        # Inject morning bias into gate log if available
+        if morning_bias_data:
+            bias_str = morning_bias_data.get("bias", "?")
+            bias_score = morning_bias_data.get("score", 0)
+            bias_mode = morning_bias_data.get("gate_mode", "SMART")
+            gate_log.insert(0, f"MORNING_BIAS: {'✅' if bias_str != 'SIDEWAYS' else '⚠️'} "
+                              f"{bias_str} score={bias_score} mode={bias_mode}")
+
         decision_summary = {
             "symbol":      self.symbol,
             "signal_type": signal["signal_type"],
@@ -261,6 +315,7 @@ class BotEngine:
             "gate_log":    gate_log,
             "reasons":     signal.get("reasons", [])[:5],
             "strategy":    str(signal.get("strategy_type", "")),
+            "morning_bias": morning_bias_data.get("bias") if morning_bias_data else None,
             "timestamp":   now_ist_iso(),
         }
         logger.info(
@@ -284,6 +339,31 @@ class BotEngine:
 
         if signal["signal_type"] == "NO_TRADE":
             return
+
+        # ── Morning Bias post-signal check (SMART mode) ──────────────────
+        if settings.MORNING_BIAS_ENABLED and morning_bias_data:
+            try:
+                from intelligence.morning_bias import post_signal_bias_check
+                bias_allow, bias_msg = await post_signal_bias_check(
+                    self.symbol, signal, morning_bias_data,
+                )
+                if not bias_allow:
+                    logger.info(f"🌅 Morning bias SMART block: {bias_msg}")
+                    await add_notification(
+                        "INFO", "Morning Bias Block",
+                        f"Signal score={signal.get('score',0)} blocked: {bias_msg[:100]}"
+                    )
+                    await _broadcast("signal_decision", {
+                        "symbol": self.symbol, "signal_type": "NO_TRADE",
+                        "blocked_by": "MORNING_BIAS_SMART",
+                        "gate_log": [f"MORNING_BIAS_POST: ❌ {bias_msg}"],
+                        "reasons": [bias_msg], "timestamp": now_ist_iso(),
+                    })
+                    return
+                else:
+                    logger.info(f"🌅 Morning bias post-check OK: {bias_msg}")
+            except Exception as e:
+                logger.debug(f"Morning bias post-check skipped: {e}")
 
         # ── AI validation (advisory — never blocks) ──────────────────────
         ai_verdict = None
@@ -895,4 +975,6 @@ class BotEngine:
             "cooldown_active":      bool(self.cooldown_until and now_ist() < self.cooldown_until),
             "trading_halted_today": self.trading_halted_today,
             "remaining_daily_risk": round(rem, 2),
+            "morning_bias_enabled": settings.MORNING_BIAS_ENABLED,
+            "morning_bias_mode":    settings.MORNING_BIAS_MODE,
         }
