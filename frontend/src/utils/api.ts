@@ -98,4 +98,14 @@ export const api = {
 
   // ── Signal Decision Log ────────────────────────────────────────────────────
   getSignalLog:  (limit = 50) => req(`/api/signals/log?limit=${limit}`),
+
+  // ── Morning Market Intelligence Engine ────────────────────────────────────
+  getMorningBias:      (symbol = 'NIFTY') => req(`/api/intelligence/morning-bias/${symbol}`),
+  getIndiaVix:         () => req('/api/intelligence/vix'),
+  getPCR:              (symbol = 'NIFTY') => req(`/api/intelligence/pcr/${symbol}`),
+  getFiiDii:           () => req('/api/intelligence/fii-dii'),
+  debugMorningBias:    (symbol = 'NIFTY') => req(`/api/debug/morning-bias/${symbol}`),
+  debugBiasComponent:  (component: string, symbol = 'NIFTY') =>
+    req(`/api/debug/morning-bias-component/${component}?symbol=${symbol}`),
+  clearBiasCache:      () => req('/api/debug/morning-bias/clear-cache', { method: 'POST' }),
 };

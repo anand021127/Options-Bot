@@ -114,6 +114,137 @@ function LiveStatusBar({ botStatus, wsConnected, wsDataConnected, upstoxStatus, 
   );
 }
 
+// ── Morning Bias Card ────────────────────────────────────────────────────────
+function MorningBiasCard({ symbol, biasData, onRefresh }: { symbol: string; biasData: any; onRefresh: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<any>(biasData);
+
+  useEffect(() => { if (biasData) setData(biasData); }, [biasData]);
+
+  const refresh = async () => {
+    setLoading(true);
+    try { const d = await api.getMorningBias(symbol); setData(d); onRefresh(); } catch {}
+    setLoading(false);
+  };
+
+  const bias = data?.bias || 'LOADING';
+  const score = data?.score ?? 0;
+  const maxScore = data?.max_score || 6;
+  const trade = data?.trade || '—';
+  const mode = data?.gate_mode || 'SMART';
+  const signals = data?.signals || [];
+  const safety = data?.safety || {};
+
+  const biasColor = bias === 'BULLISH' ? 'text-brand-green' : bias === 'BEARISH' ? 'text-brand-red' : 'text-brand-yellow';
+  const biasBg = bias === 'BULLISH' ? 'bg-brand-green/10 border-brand-green/30' : bias === 'BEARISH' ? 'bg-brand-red/10 border-brand-red/30' : 'bg-brand-yellow/10 border-brand-yellow/30';
+  const modeColors: Record<string,string> = { STRICT: 'text-brand-red', SMART: 'text-brand-accent', FREE: 'text-brand-green' };
+
+  return (
+    <div className="bg-brand-card card-glow rounded-2xl p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🌅</span>
+          <div>
+            <h2 className="font-display font-bold text-sm">Morning Market Bias</h2>
+            <p className="text-brand-muted text-xs font-mono">Pre-market intelligence</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-lg border ${biasBg} ${biasColor}`}>
+            {bias}
+          </span>
+          <button onClick={refresh} disabled={loading}
+            className="text-brand-muted hover:text-brand-accent p-1 rounded-lg transition-all disabled:opacity-50">
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''}/>
+          </button>
+        </div>
+      </div>
+
+      {/* Score bar */}
+      <div className="bg-brand-surface rounded-xl p-3">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-brand-muted text-xs font-mono">Bias Score</span>
+          <span className={`text-sm font-mono font-bold ${biasColor}`}>{score > 0 ? '+' : ''}{score}/±{maxScore}</span>
+        </div>
+        <div className="relative h-2 bg-brand-border rounded-full overflow-hidden">
+          <div className="absolute inset-y-0 left-1/2 w-px bg-brand-muted/30 z-10"/>
+          {score > 0 ? (
+            <div className="absolute top-0 bottom-0 bg-brand-green rounded-full transition-all"
+              style={{ left: '50%', width: `${Math.min(Math.abs(score)/maxScore*50, 50)}%` }}/>
+          ) : score < 0 ? (
+            <div className="absolute top-0 bottom-0 bg-brand-red rounded-full transition-all"
+              style={{ right: '50%', width: `${Math.min(Math.abs(score)/maxScore*50, 50)}%` }}/>
+          ) : null}
+        </div>
+        <div className="flex justify-between text-xs font-mono text-brand-muted mt-1">
+          <span>-{maxScore} Bear</span><span>0</span><span>+{maxScore} Bull</span>
+        </div>
+      </div>
+
+      {/* Trade + Mode chips */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded-lg border ${
+          trade === 'CALL' ? 'bg-brand-green/15 border-brand-green/30 text-brand-green'
+          : trade === 'PUT' ? 'bg-brand-red/15 border-brand-red/30 text-brand-red'
+          : 'bg-brand-border/50 border-brand-border text-brand-muted'
+        }`}>Trade: {trade}</span>
+        <span className={`text-xs font-mono px-2 py-1 rounded-lg bg-brand-surface border border-brand-border ${modeColors[mode] || 'text-brand-muted'}`}>
+          Mode: {mode}
+        </span>
+        {safety.vix_spike && <span className="text-xs font-mono px-2 py-1 rounded-lg bg-brand-red/10 border border-brand-red/30 text-brand-red">⚠ VIX SPIKE</span>}
+        {safety.skip_opening && <span className="text-xs font-mono px-2 py-1 rounded-lg bg-brand-yellow/10 border border-brand-yellow/30 text-brand-yellow">⏳ Opening buffer</span>}
+        {data?.mixed_signals && <span className="text-xs font-mono px-2 py-1 rounded-lg bg-brand-yellow/10 border border-brand-yellow/30 text-brand-yellow">⚡ Mixed</span>}
+      </div>
+
+      {/* Signals list */}
+      {signals.length > 0 && (
+        <div className="bg-brand-surface rounded-xl p-3 space-y-1.5">
+          <p className="text-brand-muted text-xs font-mono uppercase tracking-wider mb-1">Signals</p>
+          {signals.map((s: string, i: number) => (
+            <p key={i} className="text-xs font-mono text-brand-text">{s}</p>
+          ))}
+        </div>
+      )}
+
+      {/* Quick data cards */}
+      {data?.details && (
+        <div className="grid grid-cols-3 gap-2">
+          {/* VIX */}
+          <div className="bg-brand-surface rounded-xl p-2.5 text-center">
+            <p className="text-brand-muted text-xs font-mono">VIX</p>
+            <p className={`text-sm font-mono font-bold ${
+              (data.details.vix?.vix || 0) > 20 ? 'text-brand-red'
+              : (data.details.vix?.vix || 0) > 15 ? 'text-brand-yellow'
+              : 'text-brand-green'
+            }`}>{data.details.vix?.vix?.toFixed(1) || '—'}</p>
+            <p className="text-brand-muted text-xs font-mono">{data.details.vix?.interpretation || ''}</p>
+          </div>
+          {/* PCR */}
+          <div className="bg-brand-surface rounded-xl p-2.5 text-center">
+            <p className="text-brand-muted text-xs font-mono">PCR</p>
+            <p className={`text-sm font-mono font-bold ${
+              (data.details.pcr?.pcr || 0) > 1 ? 'text-brand-green'
+              : (data.details.pcr?.pcr || 0) < 0.7 ? 'text-brand-red'
+              : 'text-brand-text'
+            }`}>{data.details.pcr?.pcr?.toFixed(2) || '—'}</p>
+            <p className="text-brand-muted text-xs font-mono">{data.details.pcr?.interpretation || ''}</p>
+          </div>
+          {/* FII */}
+          <div className="bg-brand-surface rounded-xl p-2.5 text-center">
+            <p className="text-brand-muted text-xs font-mono">FII</p>
+            <p className={`text-sm font-mono font-bold ${
+              (data.details.fii_dii?.fii_net || 0) > 0 ? 'text-brand-green' : 'text-brand-red'
+            }`}>{data.details.fii_dii?.fii_net ? `${data.details.fii_dii.fii_net > 0 ? '+' : ''}₹${data.details.fii_dii.fii_net.toFixed(0)}Cr` : '—'}</p>
+            <p className="text-brand-muted text-xs font-mono">{data.details.fii_dii?.interpretation || ''}</p>
+          </div>
+        </div>
+      )}
+
+      <p className="text-brand-muted text-xs font-mono text-right">{data?.timestamp ? new Date(data.timestamp).toLocaleTimeString('en-IN') : ''}</p>
+    </div>
+  );
+}
+
 // ── Debug Panel ──────────────────────────────────────────────────────────────
 function DebugPanel({ symbol }: { symbol: string }) {
   const [logs,    setLogs]    = useState<any>(null);
@@ -130,7 +261,12 @@ function DebugPanel({ symbol }: { symbol: string }) {
   const test = async (endpoint: string) => {
     setLoading(endpoint);
     try {
-      const data = await api.debugUpstox(endpoint, symbol);
+      let data;
+      if (endpoint === 'morning_bias_full') {
+        data = await api.getMorningBias(symbol);
+      } else {
+        data = await api.debugUpstox(endpoint, symbol);
+      }
       setResults(prev => ({ ...prev, [endpoint]: data }));
     } catch (e: any) {
       setResults(prev => ({ ...prev, [endpoint]: { error: e.message } }));
@@ -270,6 +406,119 @@ function DebugPanel({ symbol }: { symbol: string }) {
           Forces Upstox /option/contract API call and reloads all expiry dates and lot sizes.
           Use after logging into Upstox if chain shows 503.
         </p>
+      </div>
+
+      {/* ── Morning Bias Debug ── */}
+      <div className="bg-brand-card card-glow rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-display font-bold text-sm flex items-center gap-2">
+            <span>🌅</span> Morning Bias Engine
+          </h2>
+          <div className="flex gap-1.5">
+            <button
+              onClick={async () => {
+                setLoading('bias_clear');
+                try { await api.clearBiasCache(); } catch {}
+                setLoading('');
+              }}
+              disabled={loading === 'bias_clear'}
+              className="text-xs font-mono px-2 py-1 rounded-lg bg-brand-red/10 text-brand-red border border-brand-red/30 hover:bg-brand-red/20 disabled:opacity-50 transition-all"
+            >
+              {loading === 'bias_clear' ? 'Clearing...' : 'Clear Cache'}
+            </button>
+          </div>
+        </div>
+
+        {/* Full bias debug */}
+        <div className="bg-brand-surface rounded-xl p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <p className="text-brand-text text-xs font-mono font-bold">Full Morning Bias</p>
+              <p className="text-brand-muted text-xs">All 6 data sources + scoring + safety</p>
+            </div>
+            <button
+              onClick={() => test('morning_bias_full' as any)}
+              disabled={loading === 'morning_bias_full'}
+              className="text-xs font-mono px-3 py-1.5 rounded-lg bg-brand-accent/20 text-brand-accent border border-brand-accent/30 hover:bg-brand-accent/30 disabled:opacity-50 transition-all"
+            >
+              {loading === 'morning_bias_full' ? 'Testing...' : 'Test'}
+            </button>
+          </div>
+          {results['morning_bias_full'] && (
+            <div className={`rounded-lg p-2 text-xs font-mono ${
+              results['morning_bias_full'].error ? 'bg-brand-red/10 text-brand-red' : 'bg-brand-green/10 text-brand-green'
+            }`}>
+              {results['morning_bias_full'].error ? (
+                <p>❌ Error: {results['morning_bias_full'].error}</p>
+              ) : (
+                <div className="space-y-1">
+                  <p>✅ Bias: <span className="font-bold">{results['morning_bias_full'].bias}</span> | Score: {results['morning_bias_full'].score}/±{results['morning_bias_full'].max_score} | Trade: {results['morning_bias_full'].trade}</p>
+                  <p>Mode: {results['morning_bias_full'].gate_mode} | Override: {results['morning_bias_full'].override_allowed ? 'Yes' : 'No'}</p>
+                  {results['morning_bias_full'].signals?.map((s: string, i: number) => (
+                    <p key={i} className="text-brand-text">{s}</p>
+                  ))}
+                  <div className="mt-1 bg-black/20 rounded p-1 overflow-x-auto">
+                    <pre className="text-xs">{JSON.stringify(results['morning_bias_full'].safety, null, 2)}</pre>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Individual component tests */}
+        <p className="text-brand-muted text-xs font-mono uppercase tracking-wider">Individual Components</p>
+        <div className="space-y-2">
+          {[
+            { id: 'pcr',       label: 'PCR (Put-Call Ratio)',  desc: 'Option chain OI analysis' },
+            { id: 'vix',       label: 'India VIX',             desc: 'Fear gauge from Upstox' },
+            { id: 'fii_dii',   label: 'FII/DII Activity',      desc: 'Institutional flow from NSE' },
+            { id: 'technical', label: 'Technical Levels',      desc: 'VWAP, EMA, structure' },
+            { id: 'gap',       label: 'Gap Analysis',          desc: 'Gift Nifty / opening gap' },
+            { id: 'sentiment', label: 'Global Sentiment',      desc: 'S&P 500 / global risk' },
+          ].map(comp => (
+            <div key={comp.id} className="bg-brand-surface rounded-xl p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <p className="text-brand-text text-xs font-mono font-bold">{comp.label}</p>
+                  <p className="text-brand-muted text-xs">{comp.desc}</p>
+                </div>
+                <button
+                  onClick={async () => {
+                    setLoading(`bias_${comp.id}`);
+                    try {
+                      const data = await api.debugBiasComponent(comp.id, symbol);
+                      setResults(prev => ({ ...prev, [`bias_${comp.id}`]: data }));
+                    } catch (e: any) {
+                      setResults(prev => ({ ...prev, [`bias_${comp.id}`]: { error: e.message } }));
+                    }
+                    setLoading('');
+                  }}
+                  disabled={loading === `bias_${comp.id}`}
+                  className="text-xs font-mono px-3 py-1.5 rounded-lg bg-brand-accent/20 text-brand-accent border border-brand-accent/30 hover:bg-brand-accent/30 disabled:opacity-50 transition-all"
+                >
+                  {loading === `bias_${comp.id}` ? 'Testing...' : 'Test'}
+                </button>
+              </div>
+              {results[`bias_${comp.id}`] && (
+                <div className={`rounded-lg p-2 text-xs font-mono ${
+                  results[`bias_${comp.id}`].error ? 'bg-brand-red/10 text-brand-red' : 'bg-brand-green/10 text-brand-green'
+                }`}>
+                  {results[`bias_${comp.id}`].error ? (
+                    <p>❌ Error: {results[`bias_${comp.id}`].error}</p>
+                  ) : (
+                    <div className="space-y-1">
+                      <p>✅ Latency: {results[`bias_${comp.id}`].latency_ms}ms</p>
+                      <div className="mt-1 bg-black/20 rounded p-1 overflow-x-auto max-h-48">
+                        <pre className="text-xs">{JSON.stringify(results[`bias_${comp.id}`].data, null, 2).slice(0, 800)}</pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -504,6 +753,7 @@ export default function Dashboard() {
   const [unreadCount,   setUnreadCount]    = useState(0);
   const [tradeRefreshKey, setTradeRefreshKey] = useState(0);
   const [dailySummary,  setDailySummary]   = useState<any>(null);
+  const [morningBias,   setMorningBias]    = useState<any>(null);
 
   const pushAlert = (msg: string, type = 'warn') => {
     setAlerts(a => [{ msg, type }, ...a].slice(0, 4));
@@ -551,6 +801,7 @@ export default function Dashboard() {
       `🤖 AI: ${d.approved ? '✅ Approved' : '⚠️ Caution'} (${d.confidence}%) — ${(d.reasoning || '').slice(0, 60)}`,
       d.approved ? 'info' : 'warn'
     ),
+    morning_bias:    (d) => setMorningBias(d),
     pong:            () => {},
   });
 
@@ -764,7 +1015,11 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
-            {hasLiveTrades && <TradeTracker ticks={premiumTicks} currentSpot={liveSpot}/>}            
+            {hasLiveTrades && <TradeTracker ticks={premiumTicks} currentSpot={liveSpot}/>}
+            {/* Morning Bias Card */}
+            {(botStatus?.morning_bias_enabled || morningBias) && (
+              <MorningBiasCard symbol={symbol} biasData={morningBias} onRefresh={fetchBotStatus}/>
+            )}
             <EquityCurve data={equityCurve}/>
             {btst.length > 0 && <BTSTPanel btst={btst}/>}            
           </div>

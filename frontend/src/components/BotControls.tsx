@@ -310,6 +310,55 @@ export default function BotControls({ botStatus, onStart, onStop, onEmergencySto
               <span>3 (frequent)</span><span>10 (elite only)</span>
             </div>
           </div>
+
+          {/* Morning Bias Engine */}
+          <div className="pt-2 border-t border-brand-border space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-mono font-semibold flex items-center gap-1">🌅 Morning Bias Engine</p>
+                <p className="text-xs text-brand-muted">Pre-market intelligence filter</p>
+              </div>
+              <button
+                onClick={async () => {
+                  const newVal = !botStatus?.morning_bias_enabled;
+                  await api.updateBotConfig({ morning_bias_enabled: newVal });
+                  onConfigChange();
+                }}
+                className={`relative w-10 h-5 rounded-full transition-all flex-shrink-0 ${
+                  botStatus?.morning_bias_enabled ? 'bg-brand-accent' : 'bg-brand-border'
+                }`}>
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                  botStatus?.morning_bias_enabled ? 'right-0.5' : 'left-0.5'
+                }`}/>
+              </button>
+            </div>
+            {botStatus?.morning_bias_enabled && (
+              <div className="bg-brand-card rounded-lg p-2.5 space-y-2">
+                <p className="text-xs font-mono text-brand-muted">GATE MODE</p>
+                <div className="flex rounded-lg overflow-hidden border border-brand-border">
+                  {(['STRICT','SMART','FREE'] as const).map(m => (
+                    <button key={m}
+                      onClick={async () => {
+                        await api.updateBotConfig({ morning_bias_mode: m });
+                        onConfigChange();
+                      }}
+                      className={`flex-1 py-1.5 text-xs font-mono font-bold transition-all ${
+                        botStatus?.morning_bias_mode === m
+                          ? m === 'STRICT' ? 'bg-brand-red/20 text-brand-red'
+                            : m === 'SMART' ? 'bg-brand-accent/20 text-brand-accent'
+                            : 'bg-brand-green/20 text-brand-green'
+                          : 'text-brand-muted hover:text-brand-text'
+                      }`}>{m}</button>
+                  ))}
+                </div>
+                <div className="text-xs font-mono text-brand-muted space-y-0.5">
+                  {botStatus?.morning_bias_mode === 'STRICT' && <p>🔴 Hard blocks trades when bias = NO_TRADE</p>}
+                  {botStatus?.morning_bias_mode === 'SMART' && <p>🔵 Allows high-confidence trades through (score ≥ 8)</p>}
+                  {botStatus?.morning_bias_mode === 'FREE' && <p>🟢 Advisory only — logs bias, never blocks</p>}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
