@@ -1,15 +1,14 @@
 'use client';
-import { Clock, TrendingUp, TrendingDown } from 'lucide-react';
+import { Clock } from 'lucide-react';
 
 function TradeRow({ trade, currentPrice }: any) {
   const isCE  = trade.option_type === 'CE';
-  const pnlEst = currentPrice
-    ? ((currentPrice - trade.entry_price) * (isCE ? 1 : -1) * 0.5 * trade.quantity)
-    : 0;
-  const isPos = pnlEst >= 0;
 
   const entryTime = trade.entry_time
-    ? new Date(trade.entry_time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})
+    ? new Date(trade.entry_time).toLocaleTimeString('en-IN',{
+        hour:'2-digit',minute:'2-digit',
+        timeZone: 'Asia/Kolkata',
+      })
     : '--';
 
   return (
@@ -49,15 +48,10 @@ function TradeRow({ trade, currentPrice }: any) {
         </div>
       </div>
 
-      {/* P&L estimate */}
-      <div className={`mt-2 pt-2 border-t border-brand-border flex items-center justify-between`}>
-        <span className="text-brand-muted text-xs font-mono">Est. P&L</span>
-        <div className="flex items-center gap-1">
-          {isPos ? <TrendingUp size={11} className="text-brand-green"/> : <TrendingDown size={11} className="text-brand-red"/>}
-          <span className={`font-mono font-bold text-sm ${isPos?'text-brand-green':'text-brand-red'}`}>
-            {isPos?'+':'-'}₹{Math.abs(pnlEst).toFixed(0)}
-          </span>
-        </div>
+      {/* Note: Accurate live P&L is shown in Live Positions (TradeTracker) */}
+      <div className="mt-2 pt-2 border-t border-brand-border flex items-center justify-between">
+        <span className="text-brand-muted text-xs font-mono">Live P&L</span>
+        <span className="text-brand-accent text-xs font-mono">See Live Positions ↑</span>
       </div>
     </div>
   );

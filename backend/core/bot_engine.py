@@ -12,6 +12,7 @@ import asyncio
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Set
 from loguru import logger
+from utils.time import now_ist, now_ist_iso, today_ist
 
 from core.database import (
     save_trade, close_trade, mark_partial_booked,
@@ -34,7 +35,7 @@ from execution.sizing import calculate_adaptive_size
 from intelligence.strategy_intel import (
     classify_trade_strategy, record_strategy_result, StrategyType
 )
-from intelligence.market_intel import get_market_status, is_no_trade_day
+from intelligence.market_intel import get_market_status, is_no_trade_day, is_trading_day
 from btst.strategy import generate_btst_signal, should_exit_btst, is_btst_entry_window
 from config import settings
 
@@ -104,6 +105,7 @@ class BotEngine:
         self._task:         Optional[asyncio.Task] = None
         self._monitor_task: Optional[asyncio.Task] = None
         self._btst_task:    Optional[asyncio.Task] = None
+        self._ai_task:      Optional[asyncio.Task] = None
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -142,6 +144,7 @@ class BotEngine:
         self._task         = asyncio.create_task(self._signal_loop())
         self._monitor_task = asyncio.create_task(self._position_monitor_loop())
         self._btst_task    = asyncio.create_task(self._btst_loop())
+        self._ai_task      = asyncio.create_task(self._ai_analysis_loop())
 
         msg = f"{mode.upper()} | {self.symbol} | ₹{self.capital:,.0f} | Score≥{self.min_score}"
         await add_notification("INFO", "Bot Started", msg)
@@ -153,7 +156,7 @@ class BotEngine:
 
     async def stop(self):
         self.is_running = False
-        for t in [self._task, self._monitor_task, self._btst_task]:
+        for t in [self._task, self._monitor_task, self._btst_task, self._ai_task]:
             if t:
                 t.cancel()
         await set_config("bot_status", "stopped")
@@ -194,7 +197,14 @@ class BotEngine:
                 await asyncio.sleep(10)
 
     async def _check_and_trade(self):
-        today = date.today()
+        # ── Guard: Skip entirely if market is closed (weekend/holiday/outside hours) ──
+        trading_day, td_reason = await is_trading_day()
+        if not trading_day:
+            return   # Silent — no logging on weekends/holidays
+        if not is_market_open():
+            return   # Silent — outside 09:15-15:30
+
+        today = today_ist()
 
         if self.last_trade_date != today:
             self.daily_pnl            = 0.0
@@ -222,8 +232,8 @@ class BotEngine:
         if self.daily_trades_count >= self.max_daily_trades:
             return
 
-        if self.cooldown_until and datetime.now() < self.cooldown_until:
-            rem = int((self.cooldown_until - datetime.now()).total_seconds() / 60)
+        if self.cooldown_until and now_ist() < self.cooldown_until:
+            rem = int((self.cooldown_until - now_ist()).total_seconds() / 60)
             await _broadcast("cooldown", {"remaining_minutes": rem})
             return
 
@@ -251,7 +261,7 @@ class BotEngine:
             "gate_log":    gate_log,
             "reasons":     signal.get("reasons", [])[:5],
             "strategy":    str(signal.get("strategy_type", "")),
-            "timestamp":   datetime.now().isoformat(),
+            "timestamp":   now_ist_iso(),
         }
         logger.info(
             f"[DECISION] {self.symbol} | {signal['signal_type']} | "
@@ -391,7 +401,7 @@ class BotEngine:
             "target_price":       tgt_price,
             "partial_target":     partial_tgt,
             "status":             "OPEN",
-            "entry_time":         datetime.now().isoformat(),
+            "entry_time":         now_ist_iso(),
             "signal":             signal,
             "regime":             signal.get("regime", ""),
             "iv_regime":          signal.get("iv_regime", ""),
@@ -625,7 +635,7 @@ class BotEngine:
                         await add_notification("EMERGENCY", "Day Stop", msg)
                         await _broadcast("alert", {"type": "DAY_STOP", "message": msg})
                     elif self.consecutive_losses >= self.max_consec_losses:
-                        self.cooldown_until = datetime.now() + timedelta(minutes=self.cooldown_minutes)
+                        self.cooldown_until = now_ist() + timedelta(minutes=self.cooldown_minutes)
                         await add_notification(
                             "WARNING", "Cooldown",
                             f"{self.consecutive_losses} losses → {self.cooldown_minutes}min pause"
@@ -660,7 +670,7 @@ class BotEngine:
             await _broadcast("premium_tick", {
                 "ticks":      premium_ticks,
                 "spot":       spot,
-                "timestamp":  datetime.now().isoformat(),
+                "timestamp":  now_ist_iso(),
             })
 
         await _broadcast("portfolio_update", {
@@ -731,7 +741,7 @@ class BotEngine:
 
         btst_today = sum(
             1 for bt in self.btst_trades
-            if bt.get("entry_time", "").startswith(str(date.today()))
+            if bt.get("entry_time", "").startswith(str(today_ist()))
         )
         if btst_today >= settings.BTST_MAX_PER_DAY:
             return
@@ -784,7 +794,7 @@ class BotEngine:
             "entry_price": ltp, "fill_price": fill, "quantity": qty,
             "lot_size": lot_size,
             "sl_price": signal["sl_price"], "target_price": signal["target_price"],
-            "status": "OPEN", "entry_time": datetime.now().isoformat(),
+            "status": "OPEN", "entry_time": now_ist_iso(),
             "score": signal["score"],
             "instrument_key": opt.get("instrument_key", ""),
         }
@@ -795,6 +805,41 @@ class BotEngine:
             f"BUY {opt['option_type']} ₹{opt['strike']} | Fill ₹{fill}")
         await _broadcast("btst_entered", bt_trade)
         logger.info(f"🌙 BTST #{bt_id} | {opt['option_type']} {opt['strike']} | ₹{fill}")
+
+    # ── AI Analysis loop (proactive market analysis) ──────────────────────────
+
+    async def _ai_analysis_loop(self):
+        """Periodic AI market analysis — runs independently of signals."""
+        logger.info("🤖 AI analysis loop started (every 5min during market hours)")
+        while self.is_running:
+            try:
+                if is_market_open():
+                    await self._run_ai_analysis()
+                await asyncio.sleep(300)   # 5 minutes
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug(f"AI analysis loop error: {e}")
+                await asyncio.sleep(60)
+
+    async def _run_ai_analysis(self):
+        """Fetch indicators and run AI analysis."""
+        try:
+            from data.upstox_market import fetch_ohlcv
+            from strategy.indicators import get_indicator_snapshot
+            from intelligence.ai_advisor import analyze_market_conditions
+
+            df = await fetch_ohlcv(self.symbol, period="5d", interval="5m")
+            if df is None or len(df) < 50:
+                return
+
+            indicators = get_indicator_snapshot(df)
+            result = await analyze_market_conditions(self.symbol, indicators)
+
+            if result.get("source") != "fallback":
+                await _broadcast("ai_analysis", result)
+        except Exception as e:
+            logger.debug(f"AI analysis error: {e}")
 
     # ── Emergency & controls ──────────────────────────────────────────────────
 
@@ -847,7 +892,7 @@ class BotEngine:
             "risk_pct":             self.risk_pct,
             "daily_loss_cap":       self.daily_loss_cap,
             "btst_enabled":         self.btst_enabled,
-            "cooldown_active":      bool(self.cooldown_until and datetime.now() < self.cooldown_until),
+            "cooldown_active":      bool(self.cooldown_until and now_ist() < self.cooldown_until),
             "trading_halted_today": self.trading_halted_today,
             "remaining_daily_risk": round(rem, 2),
         }

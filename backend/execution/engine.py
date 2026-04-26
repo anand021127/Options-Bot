@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import Dict, Optional
 from loguru import logger
 from config import settings
+from utils.time import now_ist_iso
 
 
 class OrderStatus:
@@ -47,7 +48,7 @@ def _make_exec_result(
         "latency_ms":      round(latency_ms, 1),
         "broker":          broker,
         "error":           error,
-        "timestamp":       datetime.now().isoformat(),
+        "timestamp":       now_ist_iso(),
     }
 
 

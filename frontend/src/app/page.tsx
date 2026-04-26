@@ -502,6 +502,8 @@ export default function Dashboard() {
   const [loading,       setLoading]        = useState(true);
   const [showNotifs,    setShowNotifs]     = useState(false);
   const [unreadCount,   setUnreadCount]    = useState(0);
+  const [tradeRefreshKey, setTradeRefreshKey] = useState(0);
+  const [dailySummary,  setDailySummary]   = useState<any>(null);
 
   const pushAlert = (msg: string, type = 'warn') => {
     setAlerts(a => [{ msg, type }, ...a].slice(0, 4));
@@ -519,11 +521,14 @@ export default function Dashboard() {
     },
     trade_entered: (d) => {
       fetchOpenTrades(); fetchStats();
+      setTradeRefreshKey(k => k + 1);
       pushAlert(`📈 Trade opened | ${d.option_type} ₹${d.strike} | Premium ₹${d.entry_option_price || d.fill_price}`, 'success');
     },
     trade_closed: (d) => {
       fetchOpenTrades(); fetchStats(); fetchEquity();
       setPremiumTicks(prev => prev.filter(t => t.id !== d.id));
+      setTradeRefreshKey(k => k + 1);
+      fetchDailySummary();
       pushAlert(`Trade closed | P&L ₹${d.pnl > 0 ? '+' : ''}${d.pnl?.toFixed(0)}`, d.pnl > 0 ? 'success' : 'warn');
     },
     partial_booked: (d) => pushAlert(`📦 Partial +₹${d.partial_pnl?.toFixed(0)} | SL→BE`, 'info'),
@@ -555,6 +560,7 @@ export default function Dashboard() {
   const fetchBTST       = async () => { try { setBtst(await api.getBTSTOpen()); } catch {} };
   const fetchStats      = async () => { try { setStats(await api.getStats()); } catch {} };
   const fetchEquity     = async () => { try { setEquityCurve(await api.getEquityCurve()); } catch {} };
+  const fetchDailySummary = async () => { try { setDailySummary(await api.getDailySummary()); } catch {} };
   const fetchIndicators = async () => {
     try { setIndicators(await api.getIndicators(botStatus.symbol || 'NIFTY')); } catch {}
   };
@@ -572,30 +578,25 @@ export default function Dashboard() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [s, p, ot, bt, eq, st, notifs] = await Promise.allSettled([
+      const [s, p, ot, bt, eq, st, notifs, ds] = await Promise.allSettled([
         api.getBotStatus(), api.getPrice('NIFTY'), api.getOpenTrades(),
         api.getBTSTOpen(), api.getEquityCurve(), api.getStats(),
-        api.getNotifications(5, true),
+        api.getNotifications(5, true), api.getDailySummary(),
       ]);
       if (s.status === 'fulfilled')     setBotStatus(s.value);
       if (p.status === 'fulfilled')     { setPrice(p.value); setLiveSpot(p.value?.price || 0); setMarketOpen(p.value?.market_open || false); }
-      if (p.status === 'fulfilled')     { setPrice(p.value); setLiveSpot(p.value?.price || 0); }
       if (ot.status === 'fulfilled')    setOpenTrades(ot.value);
       if (bt.status === 'fulfilled')    setBtst(bt.value);
       if (eq.status === 'fulfilled')    setEquityCurve(eq.value);
       if (st.status === 'fulfilled')    setStats(st.value);
       if (notifs.status === 'fulfilled') setUnreadCount((notifs.value as any[]).length);
+      if (ds.status === 'fulfilled')    setDailySummary(ds.value);
     } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { checkUpstoxStatus(); const iv = setInterval(checkUpstoxStatus, 60000); return () => clearInterval(iv); }, [checkUpstoxStatus]);
   useEffect(() => { checkWsStatus(); const iv = setInterval(checkWsStatus, 30000); return () => clearInterval(iv); }, [checkWsStatus]);
-  useEffect(() => {
-    checkWsStatus();
-    const iv = setInterval(checkWsStatus, 30000);
-    return () => clearInterval(iv);
-  }, [checkWsStatus]);
   useEffect(() => {
     const iv = setInterval(async () => {
       try {
@@ -716,6 +717,53 @@ export default function Dashboard() {
               onEmergencyStop={handleEmergencyStop}
               onConfigChange={fetchBotStatus}
             />
+            {/* Daily Summary Card */}
+            {dailySummary && (dailySummary.total_trades > 0) && (
+              <div className="bg-brand-card card-glow rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <BarChart2 size={14} className="text-brand-accent" />
+                  <h2 className="font-display font-bold text-sm">Today's Summary</h2>
+                  <span className="text-brand-muted text-xs font-mono">{dailySummary.date}</span>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="bg-brand-surface rounded-xl p-2.5 text-center">
+                    <p className="text-brand-muted text-xs font-mono">Trades</p>
+                    <p className="text-brand-text text-sm font-mono font-bold">{dailySummary.total_trades}</p>
+                  </div>
+                  <div className="bg-brand-surface rounded-xl p-2.5 text-center">
+                    <p className="text-brand-muted text-xs font-mono">Wins</p>
+                    <p className="text-brand-green text-sm font-mono font-bold">{dailySummary.wins || 0}</p>
+                  </div>
+                  <div className="bg-brand-surface rounded-xl p-2.5 text-center">
+                    <p className="text-brand-muted text-xs font-mono">Losses</p>
+                    <p className="text-brand-red text-sm font-mono font-bold">{dailySummary.losses || 0}</p>
+                  </div>
+                  <div className="bg-brand-surface rounded-xl p-2.5 text-center">
+                    <p className="text-brand-muted text-xs font-mono">Net P&L</p>
+                    <p className={`text-sm font-mono font-bold ${(dailySummary.net_pnl || 0) >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                      {(dailySummary.net_pnl || 0) >= 0 ? '+' : ''}₹{(dailySummary.net_pnl || 0).toFixed(0)}
+                    </p>
+                  </div>
+                </div>
+                {/* Win rate + best/worst */}
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  <div className="bg-brand-surface rounded-xl p-2 text-center">
+                    <p className="text-brand-muted text-xs font-mono">Win Rate</p>
+                    <p className={`text-xs font-mono font-bold ${(dailySummary.win_rate || 0) >= 50 ? 'text-brand-green' : 'text-brand-red'}`}>
+                      {(dailySummary.win_rate || 0).toFixed(0)}%
+                    </p>
+                  </div>
+                  <div className="bg-brand-surface rounded-xl p-2 text-center">
+                    <p className="text-brand-muted text-xs font-mono">Best</p>
+                    <p className="text-brand-green text-xs font-mono font-bold">+₹{Math.abs(dailySummary.best_trade || 0).toFixed(0)}</p>
+                  </div>
+                  <div className="bg-brand-surface rounded-xl p-2 text-center">
+                    <p className="text-brand-muted text-xs font-mono">Worst</p>
+                    <p className="text-brand-red text-xs font-mono font-bold">-₹{Math.abs(dailySummary.worst_trade || 0).toFixed(0)}</p>
+                  </div>
+                </div>
+              </div>
+            )}
             {hasLiveTrades && <TradeTracker ticks={premiumTicks} currentSpot={liveSpot}/>}            
             <EquityCurve data={equityCurve}/>
             {btst.length > 0 && <BTSTPanel btst={btst}/>}            
@@ -727,7 +775,7 @@ export default function Dashboard() {
             <TradeTracker ticks={premiumTicks} currentSpot={liveSpot}/>
             {btst.length > 0 && <BTSTPanel btst={btst}/>}            
             <OpenTrades trades={openTrades} currentPrice={price?.price}/>
-            <TradeHistory/>
+            <TradeHistory refreshKey={tradeRefreshKey}/>
           </div>
         )}
 
@@ -778,7 +826,7 @@ export default function Dashboard() {
           <div className="space-y-4 animate-slide-up">
             <StrategyAnalytics/>
             <EquityCurve data={equityCurve}/>
-            <TradeHistory/>
+            <TradeHistory refreshKey={tradeRefreshKey}/>
           </div>
         )}
 

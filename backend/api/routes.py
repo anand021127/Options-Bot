@@ -196,6 +196,36 @@ async def equity_curve():
     return await get_equity_curve(200)
 
 
+@router.get("/trades/daily-summary")
+async def daily_summary():
+    """Daily trading summary — wins, losses, net P&L, trade count."""
+    from utils.time import today_ist_str
+    import aiosqlite
+    today = today_ist_str()
+    async with aiosqlite.connect("trading_bot.db") as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("""
+            SELECT
+                COUNT(*) as total_trades,
+                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losses,
+                SUM(CASE WHEN pnl = 0 THEN 1 ELSE 0 END) as breakeven,
+                COALESCE(SUM(pnl), 0) as net_pnl,
+                COALESCE(MAX(pnl), 0) as best_trade,
+                COALESCE(MIN(pnl), 0) as worst_trade,
+                COALESCE(AVG(CASE WHEN pnl > 0 THEN pnl END), 0) as avg_win,
+                COALESCE(AVG(CASE WHEN pnl < 0 THEN pnl END), 0) as avg_loss,
+                COUNT(CASE WHEN status = 'OPEN' THEN 1 END) as open_trades
+            FROM trades WHERE entry_time LIKE ?
+        """, (f"{today}%",))
+        row = dict(await cur.fetchone())
+        total = max(row.get("total_trades") or 1, 1)
+        wins = row.get("wins") or 0
+        row["win_rate"] = round((wins / total) * 100, 1)
+        row["date"] = today
+        return row
+
+
 @router.get("/trades/execution-audit")
 async def execution_audit(trade_id: Optional[int] = None, limit: int = 50):
     return await get_execution_audit(trade_id, limit)
@@ -477,6 +507,44 @@ async def update_ai_config(req: AIConfigRequest):
     return {
         "ai_enabled": settings.AI_ENABLED,
         "ai_min_confidence": settings.AI_MIN_CONFIDENCE,
+    }
+
+
+@router.get("/ai/analysis")
+async def ai_analysis(symbol: str = "NIFTY"):
+    """Trigger proactive AI market analysis using current indicators."""
+    from intelligence.ai_advisor import analyze_market_conditions
+    try:
+        df = await fetch_ohlcv(symbol, period="5d", interval="5m")
+        if df is not None and len(df) >= 50:
+            indicators = get_indicator_snapshot(df)
+            result = await analyze_market_conditions(symbol, indicators)
+            return result
+        return {
+            "market_outlook": "NEUTRAL",
+            "confidence": 0,
+            "analysis": "Insufficient market data for analysis",
+            "source": "fallback",
+        }
+    except Exception as e:
+        return {
+            "market_outlook": "NEUTRAL",
+            "confidence": 0,
+            "analysis": f"Analysis error: {str(e)[:100]}",
+            "source": "error",
+        }
+
+
+@router.get("/market/trading-day")
+async def trading_day_check():
+    """Check if today is a valid NSE trading day (fetched from live API)."""
+    from intelligence.market_intel import is_trading_day, get_nse_holidays_cached
+    is_td, reason = await is_trading_day()
+    return {
+        "is_trading_day": is_td,
+        "reason": reason,
+        "market_open": is_market_open(),
+        "nse_holidays": get_nse_holidays_cached(),
     }
 
 

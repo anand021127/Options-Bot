@@ -51,6 +51,7 @@ export const api = {
   getEquityCurve:   () => req('/api/trades/equity-curve'),
   getExecutionAudit:(tradeId?: number) =>
     req(`/api/trades/execution-audit${tradeId ? `?trade_id=${tradeId}` : ''}`),
+  getDailySummary:  () => req('/api/trades/daily-summary'),
 
   // ── BTST ──────────────────────────────────────────────────────────────────
   getBTSTOpen:    () => req('/api/btst/open'),

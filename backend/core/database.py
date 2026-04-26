@@ -8,6 +8,7 @@ import aiosqlite
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
 from loguru import logger
+from utils.time import now_ist, now_ist_iso, today_ist_str
 
 DB_PATH = "trading_bot.db"
 
@@ -214,7 +215,7 @@ async def init_db():
                   StrategyType.VWAP,     StrategyType.RETEST, StrategyType.BTST]:
             await db.execute(
                 "INSERT OR IGNORE INTO strategy_performance (strategy, last_updated) VALUES (?, ?)",
-                (s, datetime.now().isoformat())
+                (s, now_ist_iso())
             )
 
         await db.commit()
@@ -255,7 +256,7 @@ async def close_trade(trade_id: int, exit_price: float, status: str, pnl: float)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "UPDATE trades SET exit_price=?, status=?, pnl=?, exit_time=? WHERE id=?",
-            (exit_price, status, pnl, datetime.now().isoformat(), trade_id)
+            (exit_price, status, pnl, now_ist_iso(), trade_id)
         )
         await db.commit()
 
@@ -300,7 +301,7 @@ async def get_stats() -> Dict:
         """)
         stats = dict(await cur.fetchone())
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = today_ist_str()
         cur2  = await db.execute("""
             SELECT SUM(pnl) as daily_pnl, COUNT(*) as daily_trades,
                    SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as daily_wins
@@ -318,7 +319,7 @@ async def get_stats() -> Dict:
 
 
 async def get_daily_trades_count() -> int:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = today_ist_str()
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
             "SELECT COUNT(*) FROM trades WHERE entry_time LIKE ?", (f"{today}%",)
@@ -338,7 +339,7 @@ async def save_execution_audit(trade_id: int, action: str, exec_result: Dict):
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             trade_id,
-            exec_result.get("timestamp", datetime.now().isoformat()),
+            exec_result.get("timestamp", now_ist_iso()),
             action,
             exec_result.get("symbol", ""),
             exec_result.get("requested_price", 0),
@@ -399,7 +400,7 @@ async def close_btst_trade(
             SET exit_price=?, pnl=?, status=?, exit_time=?, exit_reason=?, gap_pct=?
             WHERE id=?
         """, (exit_price, pnl, "CLOSED",
-              datetime.now().isoformat(), exit_reason, gap_pct, btst_id))
+              now_ist_iso(), exit_reason, gap_pct, btst_id))
         await db.commit()
 
 
@@ -457,7 +458,7 @@ async def save_equity_snapshot(
             INSERT INTO equity_snapshots
             (timestamp, capital, daily_pnl, total_pnl, open_trades, drawdown_pct)
             VALUES (?,?,?,?,?,?)
-        """, (datetime.now().isoformat(), capital, daily_pnl,
+        """, (now_ist_iso(), capital, daily_pnl,
               total_pnl, open_trades, drawdown_pct))
         await db.commit()
 
@@ -479,7 +480,7 @@ async def add_notification(type_: str, title: str, message: str):
         await db.execute("""
             INSERT INTO notifications (timestamp, type, title, message)
             VALUES (?,?,?,?)
-        """, (datetime.now().isoformat(), type_, title, message))
+        """, (now_ist_iso(), type_, title, message))
         await db.commit()
 
 
@@ -511,7 +512,7 @@ async def log_signal(
             (timestamp, symbol, signal_type, reason, blocked_by, price, score, strategy, acted)
             VALUES (?,?,?,?,?,?,?,?,?)
         """, (
-            datetime.now().isoformat(), symbol, signal_type, reason,
+            now_ist_iso(), symbol, signal_type, reason,
             blocked_by, price, score, strategy, int(acted)
         ))
         await db.commit()
