@@ -397,26 +397,48 @@ async def get_technical_levels(symbol: str = "NIFTY") -> Dict:
         )
 
         df = await fetch_ohlcv(symbol, period="5d", interval="5m")
-        if df is None or len(df) < 30:
+        if df is None or len(df) < 50:
             return _tech_fallback("Insufficient OHLCV data")
 
         df      = compute_all_indicators(df)
         latest  = df.iloc[-1]
-        close   = float(latest["close"])
-        vwap_v  = float(latest["vwap"])
-        ema9    = float(latest["ema9"])
-        ema20   = float(latest["ema20"])
-        ema50   = float(latest["ema50"])
-        sr      = get_sr_levels(df)
-        struct  = market_structure(df)
-        regime  = market_regime(df)
 
-        above_vwap = close > vwap_v
-        below_vwap = close < vwap_v
+        # Safe float extraction — handles NaN from after-hours data
+        def safe_float(val, default=0.0):
+            try:
+                import math
+                v = float(val)
+                return v if not math.isnan(v) else default
+            except (ValueError, TypeError):
+                return default
+
+        close   = safe_float(latest["close"])
+        vwap_v  = safe_float(latest.get("vwap", 0))
+        ema9    = safe_float(latest.get("ema9", 0))
+        ema20   = safe_float(latest.get("ema20", 0))
+        ema50   = safe_float(latest.get("ema50", 0))
+
+        try:
+            sr = get_sr_levels(df)
+        except Exception:
+            sr = {"support": [], "resistance": []}
+
+        try:
+            struct = market_structure(df)
+        except Exception:
+            struct = "UNKNOWN"
+
+        try:
+            regime = market_regime(df)
+        except Exception:
+            regime = "UNKNOWN"
+
+        above_vwap = close > vwap_v if vwap_v > 0 else False
+        below_vwap = close < vwap_v if vwap_v > 0 else False
 
         # EMA alignment scoring
-        ema_bullish = close > ema9 > ema20 > ema50
-        ema_bearish = close < ema9 < ema20 < ema50
+        ema_bullish = all(v > 0 for v in [close, ema9, ema20, ema50]) and close > ema9 > ema20 > ema50
+        ema_bearish = all(v > 0 for v in [close, ema9, ema20, ema50]) and close < ema9 < ema20 < ema50
 
         result = {
             "close":       round(close, 2),
@@ -662,11 +684,12 @@ async def get_morning_bias(symbol: str = "NIFTY") -> Dict:
 def _compute_safety(details: Dict) -> Dict:
     """Compute safety flags from collected data."""
     from config import settings
+    from datetime import timedelta
 
     now          = datetime.now(IST)
     market_open  = now.replace(hour=9, minute=15, second=0, microsecond=0)
     skip_minutes = getattr(settings, 'MORNING_BIAS_SKIP_MINUTES', 10)
-    skip_until   = market_open.replace(minute=market_open.minute + skip_minutes)
+    skip_until   = market_open + timedelta(minutes=skip_minutes)
 
     skip_opening = now < skip_until
 
