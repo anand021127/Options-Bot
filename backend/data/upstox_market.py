@@ -19,6 +19,7 @@ from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional
 from urllib.parse import quote
 import httpx
+import os
 import pandas as pd
 from loguru import logger
 from zoneinfo import ZoneInfo
@@ -478,6 +479,28 @@ async def get_live_price(symbol: str) -> Optional[Dict]:
         return None
 
     except RuntimeError as e:
+        # If developer mock enabled, return synthetic price to allow local testing without Upstox token
+        mock_price = os.getenv("DEV_MOCK_PRICE")
+        if mock_price:
+            try:
+                mp = float(mock_price)
+            except Exception:
+                mp = None
+            if mp:
+                result = {
+                    "price":      round(float(mp), 2),
+                    "open":       round(float(mp), 2),
+                    "high":       round(float(mp), 2),
+                    "low":        round(float(mp), 2),
+                    "volume":     0,
+                    "change_pct": 0.0,
+                    "timestamp":  datetime.now(IST).isoformat(),
+                    "symbol":     sym,
+                    "source":     "mock",
+                }
+                _price_store[sym] = result
+                logger.warning(f"Using DEV_MOCK_PRICE for {sym}: {mp}")
+                return result
         logger.error(f"Price blocked — {e}")
         return None
     except Exception as e:
@@ -736,6 +759,16 @@ async def _get_ltp_rest(instrument_key: str) -> Optional[float]:
                     return v
     except Exception as e:
         logger.warning(f"LTP REST error: {e}")
+    # Developer mock for option LTP when token unavailable
+    mock_opt = os.getenv("DEV_MOCK_OPTION_LTP") or os.getenv("DEV_MOCK_PRICE")
+    if mock_opt:
+        try:
+            v = round(float(mock_opt), 2)
+            logger.warning(f"Using DEV_MOCK_OPTION_LTP for {instrument_key}: {v}")
+            _option_ltp_store[instrument_key] = v
+            return v
+        except Exception:
+            pass
     return None
 
 
