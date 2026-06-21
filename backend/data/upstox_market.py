@@ -99,53 +99,85 @@ async def connect_websocket(symbols: List[str] = None) -> bool:
 
 async def _price_poll_loop():
     """Poll Upstox LTP every 2 seconds for live spot prices."""
-    while True:
-        try:
-            token = await _get_token()
-            # Build comma-separated instrument keys
-            keys = [INDEX_KEYS[s.upper()] for s in _poll_symbols if s.upper() in INDEX_KEYS]
-            if not keys:
-                await asyncio.sleep(5)
+    backoff = 1
+    consecutive_errors = 0
+    try:
+        while True:
+            try:
+                token = await _get_token()
+                # Build comma-separated instrument keys
+                keys = [INDEX_KEYS[s.upper()] for s in _poll_symbols if s.upper() in INDEX_KEYS]
+                if not keys:
+                    await asyncio.sleep(5)
+                    continue
+
+                # Upstox /market-quote/ltp accepts multiple keys as comma-separated
+                keys_param = ",".join(keys)
+                async with httpx.AsyncClient(timeout=6) as c:
+                    resp = await c.get(
+                        f"{UPSTOX_BASE}/market-quote/ltp",
+                        params={"instrument_key": keys_param},
+                        headers=_headers(token),
+                    )
+
+                # Handle auth failures explicitly
+                if resp.status_code == 401:
+                    logger.warning("Upstox poll unauthorized (401). Clearing saved token and pausing polling.")
+                    try:
+                        from api.upstox_auth import clear_upstox_token
+                        await clear_upstox_token()
+                    except Exception:
+                        logger.debug("Could not clear token from DB")
+                    await asyncio.sleep(30)
+                    continue
+
+                if resp.status_code == 200:
+                    consecutive_errors = 0
+                    backoff = 1
+                    data = resp.json().get("data", {})
+                    for sym, ikey in [(s, INDEX_KEYS[s.upper()]) for s in _poll_symbols if s.upper() in INDEX_KEYS]:
+                        # Upstox returns key with | encoded or as-is — try both
+                        feed = data.get(ikey) or data.get(ikey.replace("|", "%7C")) or data.get(ikey.replace(" ", "%20"))
+                        if feed:
+                            ltp = feed.get("last_price") or feed.get("ltp")
+                            if ltp:
+                                existing = _price_store.get(sym.upper(), {})
+                                _price_store[sym.upper()] = {
+                                    "price":      round(float(ltp), 2),
+                                    "open":       float(existing.get("open", ltp)),
+                                    "high":       float(existing.get("high", ltp)),
+                                    "low":        float(existing.get("low", ltp)),
+                                    "volume":     int(existing.get("volume", 0)),
+                                    "change_pct": float(existing.get("change_pct", 0)),
+                                    "timestamp":  datetime.now(IST).isoformat(),
+                                    "symbol":     sym.upper(),
+                                    "source":     "upstox_rest_poll",
+                                }
+                else:
+                    # Non-200 non-auth responses
+                    consecutive_errors += 1
+                    logger.debug(f"Price poll non-200: {resp.status_code} - {resp.text[:200]}")
+
+            except RuntimeError:
+                # No token — wait and retry
+                logger.debug("Price poll waiting for token...")
+                await asyncio.sleep(30)
                 continue
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                consecutive_errors += 1
+                logger.debug(f"Price poll exception: {type(e).__name__}: {e}")
 
-            # Upstox /market-quote/ltp accepts multiple keys as comma-separated
-            keys_param = ",".join(keys)
-            async with httpx.AsyncClient(timeout=4) as c:
-                resp = await c.get(
-                    f"{UPSTOX_BASE}/market-quote/ltp",
-                    params={"instrument_key": keys_param},
-                    headers=_headers(token),
-                )
-
-            if resp.status_code == 200:
-                data = resp.json().get("data", {})
-                for sym, ikey in [(s, INDEX_KEYS[s.upper()]) for s in _poll_symbols if s.upper() in INDEX_KEYS]:
-                    # Upstox returns key with | encoded or as-is — try both
-                    feed = data.get(ikey) or data.get(ikey.replace("|", "%7C")) or data.get(ikey.replace(" ", "%20"))
-                    if feed:
-                        ltp = feed.get("last_price") or feed.get("ltp")
-                        if ltp:
-                            existing = _price_store.get(sym.upper(), {})
-                            _price_store[sym.upper()] = {
-                                "price":      round(float(ltp), 2),
-                                "open":       float(existing.get("open", ltp)),
-                                "high":       float(existing.get("high", ltp)),
-                                "low":        float(existing.get("low", ltp)),
-                                "volume":     int(existing.get("volume", 0)),
-                                "change_pct": float(existing.get("change_pct", 0)),
-                                "timestamp":  datetime.now(IST).isoformat(),
-                                "symbol":     sym.upper(),
-                                "source":     "upstox_rest_poll",
-                            }
-
-        except RuntimeError:
-            # No token — wait and retry
-            await asyncio.sleep(30)
-            continue
-        except Exception as e:
-            logger.debug(f"Price poll error: {e}")
-
-        await asyncio.sleep(2)
+            # Exponential backoff on consecutive errors (caps at 60s)
+            if consecutive_errors > 0:
+                backoff = min(60, backoff * 2) if backoff > 1 else 2
+                await asyncio.sleep(backoff)
+            else:
+                await asyncio.sleep(2)
+    except asyncio.CancelledError:
+        logger.info("Price poll loop cancelled")
+        return
 
 
 async def subscribe_option_live(instrument_key: str):

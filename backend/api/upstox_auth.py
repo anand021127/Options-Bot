@@ -59,11 +59,29 @@ async def save_upstox_token(access_token: str, refresh_token: str = None, expire
 
 async def _get_token_obj() -> dict:
     async with aiosqlite.connect(DB_PATH) as db:
+        # Primary: new JSON token key
         cur = await db.execute("SELECT value FROM bot_config WHERE key = ?", (TOKEN_DB_KEY,))
         row = await cur.fetchone()
         if row and row[0]:
             try:
                 return json.loads(row[0])
+            except Exception:
+                return {}
+
+        # Backwards compatibility: legacy plain token key
+        cur2 = await db.execute("SELECT value FROM bot_config WHERE key = ?", ("upstox_access_token",))
+        row2 = await cur2.fetchone()
+        if row2 and row2[0]:
+            # Migrate legacy token into new JSON format
+            try:
+                tok = str(row2[0])
+                token_obj = {"access_token": tok}
+                # Persist migrated token JSON for future compatibility
+                try:
+                    await _save_token_obj(token_obj)
+                except Exception:
+                    pass
+                return token_obj
             except Exception:
                 return {}
     return {}
@@ -81,7 +99,8 @@ async def get_upstox_token() -> str:
 
     # If DB token exists and not expired (with 60s buffer) return it
     now_ts = int(time.time())
-    if access and expires_at and int(expires_at) - 60 > now_ts:
+    # If expires_at missing, treat token as valid (legacy behavior) and return it
+    if access and (not expires_at or int(expires_at) - 60 > now_ts):
         return access
 
     # If we have a refresh token, attempt refresh

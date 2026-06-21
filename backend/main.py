@@ -38,6 +38,13 @@ async def lifespan(app: FastAPI):
     # Create bot engine
     bot_engine = BotEngine()
     app.state.bot_engine = bot_engine
+    # Wire websocket broadcaster so bot engine can push real-time events to clients
+    try:
+        from api.websocket import broadcast_to_all
+        bot_engine.set_broadcast_fn(broadcast_to_all)
+        logger.info("🔔 Broadcast function wired to WebSocket manager")
+    except Exception as e:
+        logger.warning(f"Could not set broadcast function: {e}")
 
     # Auto-restart if was running before sleep
     try:

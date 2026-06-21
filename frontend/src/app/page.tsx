@@ -88,6 +88,18 @@ function LiveStatusBar({ botStatus, wsConnected, wsDataConnected, upstoxStatus, 
 
   return (
     <div className="flex overflow-x-auto gap-0 border-b border-brand-border bg-brand-surface/70">
+      {/* Prominent Mode chip */}
+      <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 border-r border-brand-border/50">
+        <div className={botStatus?.mode === 'live' ? 'text-brand-red' : 'text-brand-green'}>
+          {botStatus?.mode === 'live' ? <CircleDot className="text-brand-red"/> : <CircleDot className="text-brand-green"/>}
+        </div>
+        <div>
+          <p className="text-brand-muted text-xs font-mono leading-none">Mode</p>
+          <p className={`text-xs font-mono font-bold leading-none mt-0.5 ${botStatus?.mode === 'live' ? 'text-brand-red' : 'text-brand-green'}`}>
+            {(botStatus?.mode || 'paper').toUpperCase()
+          </p>
+        </div>
+      </div>
       {items.map((item, i) => (
         <div key={i} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 border-r border-brand-border/50 ${item.ok ? '' : 'opacity-70'}`}>
           <span className={item.ok ? 'text-brand-green' : 'text-brand-red'}>{item.icon}</span>
