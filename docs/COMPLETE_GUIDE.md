@@ -107,6 +107,9 @@ options-bot/
 python 3.10+   → https://python.org
 node 18+       → https://nodejs.org
 git            → https://git-scm.com
+### Recent Important Changes (2026-06-21)
+- Removed a temporary development-only `/api/test/execute` endpoint which was used for local paper-execution testing. Use the bot's normal flows and the `execution` APIs instead.
+- Added GitHub Actions CI: runs `black --check`, `flake8`, and `pytest` on push/PR to `main` to enforce formatting, linting, and tests.
 ```
 
 ### STEP 2: Clone and set up backend locally
