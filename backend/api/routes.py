@@ -12,6 +12,7 @@ from core.database import (
     get_config, set_config, get_all_config,
     get_notifications, mark_notifications_read,
     get_execution_audit, get_open_btst_trades, get_btst_history,
+    save_trade, save_execution_audit,
 )
 from data.upstox_market import (
     get_live_price as fetch_live_price,
@@ -20,11 +21,13 @@ from data.upstox_market import (
     is_market_open,
     get_ws_status,
 )
+from execution.engine import execute_order as execute_order_api
 from data.market_data import is_market_open as _yf_market_open_unused   # kept for import compat only
 from strategy.signal_engine import generate_signal
 from strategy.indicators import get_indicator_snapshot
 from intelligence.market_intel import get_market_status, add_blocked_date, remove_blocked_date
 from intelligence.strategy_intel import get_strategy_performance
+from config import settings
 
 router = APIRouter()
 
@@ -398,6 +401,80 @@ async def load_instruments_endpoint(symbol: str):
     from data.upstox_market import get_available_expiries
     expiries = await get_available_expiries(symbol.upper())
     return {"status": "loaded", "symbol": symbol.upper(), "expiries_found": len(expiries)}
+
+
+# ------- Test helper: force a paper execution (DEV only) -------
+class ForceExecRequest(BaseModel):
+    instrument_key: str
+    lot_size: int
+    ltp: float
+    quantity: int
+    strike: float
+    option_type: str = "CE"
+    expiry: str = ""
+    action: str = "BUY"
+    persist: bool = False
+
+
+@router.post("/test/execute")
+async def test_execute(req: ForceExecRequest):
+    """DEV-only: force a paper execution to validate execution pipeline and DB audit."""
+    # Safety: only allow this endpoint in non-production environments
+    if getattr(settings, "APP_ENV", "development").strip().lower() == "production":
+        raise HTTPException(404, "Not Found")
+    res = await execute_order_api(
+        instrument_key=req.instrument_key,
+        option_type=req.option_type,
+        strike=req.strike,
+        expiry=req.expiry,
+        quantity=req.quantity,
+        action=req.action,
+        ltp=req.ltp,
+        lot_size=req.lot_size,
+        entry_spot=req.ltp,  # use ltp as spot for synthetic test
+        mode="paper",
+    )
+    # Optionally persist to DB (DEV only) — creates a minimal trade record + audit
+    if getattr(req, "persist", False):
+        from utils.time import now_ist_iso
+        # build a minimal trade object compatible with save_trade
+        trade = {
+            "symbol": "NIFTY",
+            "option_type": req.option_type,
+            "strike": req.strike,
+            "expiry": req.expiry,
+            "entry_price": req.ltp,
+            "fill_price": res.get("fill_price", req.ltp),
+            "quantity": req.quantity,
+            "lots": max(1, req.quantity // max(1, req.lot_size)),
+            "lot_size": req.lot_size,
+            "sl_price": round(req.ltp * 0.5, 2),
+            "target_price": round(req.ltp * 1.5, 2),
+            "partial_target": 0,
+            "status": "OPEN",
+            "entry_time": now_ist_iso(),
+            "signal": {},
+            "notes": "DEV_FORCE_EXEC",
+            "regime": "",
+            "iv_regime": "",
+            "mtf_bias": "",
+            "score": 0,
+            "strategy_type": "DEV",
+            "confidence": "LOW",
+            "risk_pct_applied": 1.5,
+            "slippage_pct": res.get("slippage_pct", 0),
+            "order_id": res.get("order_id", ""),
+            "btst_trade": False,
+        }
+        tid = await save_trade(trade)
+        await save_execution_audit(tid, req.action.upper(), {
+            **res,
+            "symbol": trade["symbol"],
+            "requested_price": req.ltp,
+        })
+        return {"executed": res, "saved_trade_id": tid}
+
+    return {"executed": res}
 
 
 @router.get("/market/ws-status")
