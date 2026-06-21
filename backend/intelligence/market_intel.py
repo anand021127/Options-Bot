@@ -151,9 +151,9 @@ async def is_trading_day(check_date: date = None) -> Tuple[bool, str]:
     if check_date is None:
         check_date = date.today()
 
-    # Developer override for testing: force trading day
+    # Developer override for testing is ignored in production — log if present
     if os.getenv("DEV_ALLOW_TRADING") == "1":
-        return True, "DEV override: forced trading day"
+        logger.warning("DEV_ALLOW_TRADING is set but ignored — production requires live holiday/weekend checks")
 
     # Weekend check
     if check_date.weekday() >= 5:

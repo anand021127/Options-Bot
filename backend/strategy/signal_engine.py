@@ -100,35 +100,11 @@ async def generate_signal(
     min_score: int  = DEFAULT_MIN_SCORE,
     filters:   Dict = None,
 ) -> Dict:
-    # Developer override: force a synthetic entry signal for local testing
+    # Developer synthesize flag `DEV_FORCE_SIGNAL` is disabled in production
+    # to ensure only real market data drives signals. If set, it will be ignored.
     dev_force = os.getenv("DEV_FORCE_SIGNAL")
     if dev_force and dev_force.lower() in ("1", "true", "yes"):
-        now = datetime.now(IST).isoformat()
-        return {
-            "signal_type": "ENTRY_LONG",
-            "score": 10,
-            "max_score": 16,
-            "reasons": ["DEV forced signal"],
-            "blocked_by": None,
-            "gate_log": ["DEV_FORCE: synthetic signal"],
-            "option": {
-                "instrument_key": "MOCK|NIFTY_DEV_CE",
-                "ltp": 10.0,
-                "lot_size": 50,
-                "bid": 10.0,
-                "ask": 10.0,
-            },
-            "sl_pct": 20.0,
-            "target_pct": 50.0,
-            "sl_price": 8.0,
-            "target_price": 15.0,
-            "partial_target": 12.0,
-            "price_data": {"price": float(os.getenv("DEV_MOCK_PRICE") or 18000.0)},
-            "indicators": {},
-            "strategy_type": "DEV",
-            "filters_used": filters,
-            "timestamp": now,
-        }
+        logger.warning("DEV_FORCE_SIGNAL is set but ignored — synthetic signals disabled.")
     if filters is None:
         filters = {}
 

@@ -27,6 +27,13 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("✅ Database ready")
 
+    # Warn if any development/testing environment variables are present
+    dev_keys = [k for k in list(__import__('os').environ.keys()) if k.startswith(('DEV_', 'MOCK_', 'TEST_'))]
+    if dev_keys:
+        logger.warning(
+            f"Development/Test env vars detected and will be ignored for production: {', '.join(dev_keys)}"
+        )
+
     # Start Upstox WebSocket (real-time market data)
     try:
         from data.upstox_market import connect_websocket

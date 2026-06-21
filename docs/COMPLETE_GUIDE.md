@@ -199,6 +199,30 @@ git push -u origin main
 7. Wait ~3 minutes. Copy your Render URL:
    `https://options-bot-backend.onrender.com`
 
+  ---
+
+  ## Paper Trading vs Live Trading
+
+  - **Paper Trading**: Uses real market data (Upstox LTP / OHLCV) for pricing and indicators, but does not place real orders — money is simulated and order fills are recorded in the local database for testing and analytics. Paper mode still requires a valid Upstox token to fetch market data. The bot will NOT synthesize prices or OHLCV data in Paper mode.
+
+  - **Live Trading**: Places real orders through the configured broker (Upstox). Live mode requires:
+    - A configured `BROKER=upstox` in `backend/config.py` or environment.
+    - A valid Upstox token (login via dashboard) stored in the bot config.
+    - Confirmation via the dashboard `Start` flow (you must explicitly choose LIVE and confirm).
+
+  ### Important: Development/Test Flags
+
+  The following environment variables were previously used for local testing but are now ignored by the production codebase. If set, the bot logs a clear warning at startup and will not use them:
+
+  - `DEV_MOCK_PRICE`
+  - `DEV_MOCK_OPTION_LTP`
+  - `DEV_FORCE_SIGNAL`
+  - `DEV_ALLOW_TRADING`
+
+  These flags are deprecated in the production runtime to ensure the bot uses only real Upstox market data for signals and executions. For local experiments, create a separate test harness or branch that explicitly simulates market data rather than enabling these flags in production.
+
+  If you need a safe local test harness, ask for a separate script that can replay historical OHLCV and LTP into the bot's APIs without altering production paths.
+
 ### STEP 6: Deploy Frontend to Vercel (FREE)
 
 1. Go to → https://vercel.com → Sign up free

@@ -107,6 +107,15 @@ class BotEngine:
         self._btst_task:    Optional[asyncio.Task] = None
         self._ai_task:      Optional[asyncio.Task] = None
 
+    def set_broadcast_fn(self, fn):
+        """Allow callers to set a broadcast callback on the BotEngine instance.
+
+        Some callers expect an instance method `set_broadcast_fn`; the module
+        also exposes a top-level `set_broadcast_fn`. Keep both interfaces
+        compatible by delegating to the module-level setter.
+        """
+        set_broadcast_fn(fn)
+
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
     async def start(self, symbol: str = None, capital: float = None, mode: str = "paper"):

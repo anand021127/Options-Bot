@@ -479,28 +479,8 @@ async def get_live_price(symbol: str) -> Optional[Dict]:
         return None
 
     except RuntimeError as e:
-        # If developer mock enabled, return synthetic price to allow local testing without Upstox token
-        mock_price = os.getenv("DEV_MOCK_PRICE")
-        if mock_price:
-            try:
-                mp = float(mock_price)
-            except Exception:
-                mp = None
-            if mp:
-                result = {
-                    "price":      round(float(mp), 2),
-                    "open":       round(float(mp), 2),
-                    "high":       round(float(mp), 2),
-                    "low":        round(float(mp), 2),
-                    "volume":     0,
-                    "change_pct": 0.0,
-                    "timestamp":  datetime.now(IST).isoformat(),
-                    "symbol":     sym,
-                    "source":     "mock",
-                }
-                _price_store[sym] = result
-                logger.warning(f"Using DEV_MOCK_PRICE for {sym}: {mp}")
-                return result
+        # No token available — do not return synthetic/mock prices in production.
+        # Caller must handle None and block trading when price is unavailable.
         logger.error(f"Price blocked — {e}")
         return None
     except Exception as e:
@@ -760,15 +740,7 @@ async def _get_ltp_rest(instrument_key: str) -> Optional[float]:
     except Exception as e:
         logger.warning(f"LTP REST error: {e}")
     # Developer mock for option LTP when token unavailable
-    mock_opt = os.getenv("DEV_MOCK_OPTION_LTP") or os.getenv("DEV_MOCK_PRICE")
-    if mock_opt:
-        try:
-            v = round(float(mock_opt), 2)
-            logger.warning(f"Using DEV_MOCK_OPTION_LTP for {instrument_key}: {v}")
-            _option_ltp_store[instrument_key] = v
-            return v
-        except Exception:
-            pass
+    # Do not return developer mock LTPs here; caller must handle None when LTP unavailable.
     return None
 
 
@@ -820,30 +792,8 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
         return None
 
     # Developer mock: synthesize OHLCV candles when Upstox token unavailable
-    mock_price = os.getenv("DEV_MOCK_PRICE")
-    if mock_price:
-        try:
-            base = float(mock_price)
-            # create 30 5-minute candles backwards
-            periods = 30
-            freq_mins = 5
-            end = datetime.now(IST)
-            times = [end - pd.Timedelta(minutes=freq_mins * i) for i in range(periods)][::-1]
-            opens = [base + (i - periods/2) * 0.5 for i in range(periods)]
-            closes = [o + (0.2 if idx % 2 == 0 else -0.2) for idx, o in enumerate(opens)]
-            highs = [max(o, c) + 0.3 for o, c in zip(opens, closes)]
-            lows = [min(o, c) - 0.3 for o, c in zip(opens, closes)]
-            vols = [1000 for _ in range(periods)]
-            df = pd.DataFrame({
-                "timestamp": [t.isoformat() for t in times],
-                "open": opens, "high": highs, "low": lows, "close": closes, "volume": vols
-            })
-            df.set_index("timestamp", inplace=True)
-            _ohlcv_cache[cache_key] = {"data": df, "ts": datetime.now(IST).isoformat()}
-            logger.warning(f"Using DEV_MOCK_PRICE OHLCV for {symbol} ({periods} bars)")
-            return df
-        except Exception:
-            pass
+    # Do not synthesize OHLCV candles for production. If token unavailable,
+    # fetch_ohlcv will attempt Upstox endpoints and return None on failure.
 
     upstox_iv = _INTERVAL_MAP.get(interval, "5m")
     logger.info(f"OHLCV mapped interval: {interval} → {upstox_iv}")
@@ -1021,9 +971,9 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
 
 def is_market_open() -> bool:
     now    = datetime.now(IST)
-    # Developer override for testing
+    # Developer override for testing is ignored in production — log if present
     if os.getenv("DEV_ALLOW_TRADING") == "1":
-        return True
+        logger.warning("DEV_ALLOW_TRADING is set but ignored — production requires real market hours and Upstox token")
     if now.weekday() >= 5:
         return False
     open_t  = now.replace(hour=9,  minute=15, second=0, microsecond=0)
