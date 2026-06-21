@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Moon, Activity, Wifi, WifiOff, TrendingUp, TrendingDown,
          RefreshCw, Bell, Zap, ZapOff, CheckCircle, XCircle,
-         AlertTriangle, Terminal, Play, Square, BarChart2 } from 'lucide-react';
+         AlertTriangle, Terminal, Play, Square, BarChart2, CircleDot } from 'lucide-react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { api } from '@/utils/api';
 
@@ -96,7 +96,7 @@ function LiveStatusBar({ botStatus, wsConnected, wsDataConnected, upstoxStatus, 
         <div>
           <p className="text-brand-muted text-xs font-mono leading-none">Mode</p>
           <p className={`text-xs font-mono font-bold leading-none mt-0.5 ${botStatus?.mode === 'live' ? 'text-brand-red' : 'text-brand-green'}`}>
-            {(botStatus?.mode || 'paper').toUpperCase()
+            {(botStatus?.mode || 'paper').toUpperCase()}
           </p>
         </div>
       </div>
