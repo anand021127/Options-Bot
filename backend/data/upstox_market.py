@@ -995,6 +995,9 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
 
 def is_market_open() -> bool:
     now    = datetime.now(IST)
+    # Developer override for testing
+    if os.getenv("DEV_ALLOW_TRADING") == "1":
+        return True
     if now.weekday() >= 5:
         return False
     open_t  = now.replace(hour=9,  minute=15, second=0, microsecond=0)
