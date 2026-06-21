@@ -20,6 +20,7 @@ from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Set, Tuple
 from loguru import logger
 from zoneinfo import ZoneInfo
+import os
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -149,6 +150,10 @@ async def is_trading_day(check_date: date = None) -> Tuple[bool, str]:
     """
     if check_date is None:
         check_date = date.today()
+
+    # Developer override for testing: force trading day
+    if os.getenv("DEV_ALLOW_TRADING") == "1":
+        return True, "DEV override: forced trading day"
 
     # Weekend check
     if check_date.weekday() >= 5:
