@@ -819,6 +819,32 @@ async def fetch_ohlcv(symbol: str, period: str = "5d", interval: str = "5m") -> 
         logger.error(f"No index key for OHLCV: {sym}")
         return None
 
+    # Developer mock: synthesize OHLCV candles when Upstox token unavailable
+    mock_price = os.getenv("DEV_MOCK_PRICE")
+    if mock_price:
+        try:
+            base = float(mock_price)
+            # create 30 5-minute candles backwards
+            periods = 30
+            freq_mins = 5
+            end = datetime.now(IST)
+            times = [end - pd.Timedelta(minutes=freq_mins * i) for i in range(periods)][::-1]
+            opens = [base + (i - periods/2) * 0.5 for i in range(periods)]
+            closes = [o + (0.2 if idx % 2 == 0 else -0.2) for idx, o in enumerate(opens)]
+            highs = [max(o, c) + 0.3 for o, c in zip(opens, closes)]
+            lows = [min(o, c) - 0.3 for o, c in zip(opens, closes)]
+            vols = [1000 for _ in range(periods)]
+            df = pd.DataFrame({
+                "timestamp": [t.isoformat() for t in times],
+                "open": opens, "high": highs, "low": lows, "close": closes, "volume": vols
+            })
+            df.set_index("timestamp", inplace=True)
+            _ohlcv_cache[cache_key] = {"data": df, "ts": datetime.now(IST).isoformat()}
+            logger.warning(f"Using DEV_MOCK_PRICE OHLCV for {symbol} ({periods} bars)")
+            return df
+        except Exception:
+            pass
+
     upstox_iv = _INTERVAL_MAP.get(interval, "5m")
     logger.info(f"OHLCV mapped interval: {interval} → {upstox_iv}")
 
