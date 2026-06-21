@@ -203,6 +203,8 @@ async def init_db():
             "slippage_pct":               str(settings.SLIPPAGE_PCT),
             # Upstox token — empty by default, filled by OAuth login
             "upstox_access_token":        "",
+            # New key: store full token JSON (access, refresh, expires_at)
+            "upstox_token_json":          "",
         }
         for k, v in defaults.items():
             await db.execute(

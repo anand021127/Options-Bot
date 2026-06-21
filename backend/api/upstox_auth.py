@@ -15,6 +15,9 @@ TOKEN LIFETIME: Upstox tokens expire daily at midnight.
 """
 
 import aiosqlite
+import json
+import time
+from datetime import datetime, timedelta
 from fastapi import APIRouter
 from fastapi.responses import RedirectResponse
 import httpx
@@ -26,35 +29,93 @@ router = APIRouter()
 DB_PATH = "trading_bot.db"
 
 
+TOKEN_DB_KEY = "upstox_token_json"
+
+
+
+
 # ─── Token storage in database ────────────────────────────────────────────────
 
-async def save_upstox_token(access_token: str):
-    """Save Upstox access token to database so it survives server restarts."""
+async def _save_token_obj(token_obj: dict):
+    """Save full token JSON to DB (access_token, refresh_token, expires_at)."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "INSERT OR REPLACE INTO bot_config (key, value) VALUES (?, ?)",
-            ("upstox_access_token", access_token)
+            (TOKEN_DB_KEY, json.dumps(token_obj))
         )
         await db.commit()
-    logger.info("✅ Upstox access token saved to database")
+    logger.info("✅ Upstox token JSON saved to database")
+
+
+async def save_upstox_token(access_token: str, refresh_token: str = None, expires_in: int = None):
+    """Compatibility helper: save access_token + optional refresh + computed expires_at."""
+    token_obj = {"access_token": access_token}
+    if refresh_token:
+        token_obj["refresh_token"] = refresh_token
+    if expires_in:
+        token_obj["expires_at"] = int(time.time()) + int(expires_in)
+    await _save_token_obj(token_obj)
+
+
+async def _get_token_obj() -> dict:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT value FROM bot_config WHERE key = ?", (TOKEN_DB_KEY,))
+        row = await cur.fetchone()
+        if row and row[0]:
+            try:
+                return json.loads(row[0])
+            except Exception:
+                return {}
+    return {}
 
 
 async def get_upstox_token() -> str:
-    """
-    Get Upstox token. Priority:
-    1. Database (saved after OAuth login)
-    2. Environment variable (set in Render as fallback)
-    """
-    # Try DB first (most up-to-date)
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT value FROM bot_config WHERE key = 'upstox_access_token'"
-        )
-        row = await cur.fetchone()
-        if row and row[0]:
-            return row[0]
+    """Return a valid access_token string, refreshing it automatically when needed.
 
-    # Fallback to env variable
+    Falls back to `settings.UPSTOX_ACCESS_TOKEN` if DB has no token.
+    """
+    # Try DB token object
+    token_obj = await _get_token_obj()
+    access = token_obj.get("access_token")
+    expires_at = token_obj.get("expires_at")
+
+    # If DB token exists and not expired (with 60s buffer) return it
+    now_ts = int(time.time())
+    if access and expires_at and int(expires_at) - 60 > now_ts:
+        return access
+
+    # If we have a refresh token, attempt refresh
+    refresh_token = token_obj.get("refresh_token")
+    if refresh_token:
+        try:
+            token_url = "https://api.upstox.com/v2/login/authorization/token"
+            payload = {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": settings.UPSTOX_API_KEY,
+                "client_secret": settings.UPSTOX_API_SECRET,
+            }
+            headers = {"Content-Type": "application/x-www-form-urlencoded"}
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(token_url, data=payload, headers=headers)
+            data = resp.json()
+            new_access = data.get("access_token")
+            new_refresh = data.get("refresh_token") or refresh_token
+            expires_in = data.get("expires_in")
+            if new_access:
+                await _save_token_obj({
+                    "access_token": new_access,
+                    "refresh_token": new_refresh,
+                    "expires_at": int(time.time()) + int(expires_in) if expires_in else None,
+                })
+                logger.info("🔁 Upstox token refreshed successfully")
+                return new_access
+            else:
+                logger.warning(f"Upstox refresh failed: {data}")
+        except Exception as e:
+            logger.error(f"Upstox refresh error: {e}")
+
+    # Fallback to environment variable
     if settings.UPSTOX_ACCESS_TOKEN:
         return settings.UPSTOX_ACCESS_TOKEN
 
@@ -62,11 +123,11 @@ async def get_upstox_token() -> str:
 
 
 async def clear_upstox_token():
-    """Clear expired token from database."""
+    """Clear saved Upstox token JSON from database."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "INSERT OR REPLACE INTO bot_config (key, value) VALUES (?, ?)",
-            ("upstox_access_token", "")
+            (TOKEN_DB_KEY, "")
         )
         await db.commit()
 
@@ -116,12 +177,14 @@ async def upstox_callback(code: str):
         data = resp.json()
 
         access_token = data.get("access_token")
+        refresh_token = data.get("refresh_token")
+        expires_in = data.get("expires_in")
         if not access_token:
             logger.error(f"Upstox token exchange failed: {data}")
             return {"error": "Token exchange failed", "details": data}
 
-        # SAVE TOKEN TO DATABASE — this is the key fix
-        await save_upstox_token(access_token)
+        # SAVE FULL TOKEN (access + refresh + expiry)
+        await save_upstox_token(access_token, refresh_token=refresh_token, expires_in=expires_in)
 
         logger.info("✅ Upstox login successful, token saved")
         return {

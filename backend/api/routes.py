@@ -33,6 +33,7 @@ class BotStartRequest(BaseModel):
     symbol:  Optional[str]   = "NIFTY"
     capital: Optional[float] = 100000.0
     mode:    Optional[str]   = "paper"
+    confirm_live: Optional[bool] = False
 
 class ConfigUpdateRequest(BaseModel):
     risk_pct:               Optional[float] = None
@@ -76,6 +77,10 @@ async def start_bot(req: BotStartRequest, request: Request):
     bot = request.app.state.bot_engine
     if bot.is_running:
         raise HTTPException(400, "Bot already running")
+    # Require explicit confirmation for live mode to prevent accidental live orders
+    if (req.mode or "").lower() == "live" and not req.confirm_live:
+        raise HTTPException(400, "Starting in live mode requires confirm_live=true")
+
     await bot.start(req.symbol, req.capital, req.mode)
     return {"status": "started", "mode": req.mode, "symbol": req.symbol, "capital": req.capital}
 

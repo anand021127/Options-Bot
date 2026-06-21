@@ -12,8 +12,8 @@ async function req(path: string, options?: RequestInit) {
 
 export const api = {
   // ── Bot control ───────────────────────────────────────────────────────────
-  startBot:       (symbol: string, capital: number, mode = 'paper') =>
-    req('/api/bot/start', { method: 'POST', body: JSON.stringify({ symbol, capital, mode }) }),
+  startBot:       (symbol: string, capital: number, mode = 'paper', confirmLive = false) =>
+    req('/api/bot/start', { method: 'POST', body: JSON.stringify({ symbol, capital, mode, confirm_live: confirmLive }) }),
   stopBot:        () => req('/api/bot/stop',           { method: 'POST' }),
   emergencyStop:  () => req('/api/bot/emergency-stop', { method: 'POST' }),
   haltTrading:    () => req('/api/bot/halt',            { method: 'POST' }),

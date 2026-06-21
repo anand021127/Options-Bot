@@ -168,9 +168,13 @@ async def _upstox_execute(
                 },
             )
 
-        latency    = (time.time() - t0) * 1000
-        resp_data  = resp.json()
-        order_id   = resp_data.get("data", {}).get("order_id", "")
+        latency = (time.time() - t0) * 1000
+        # Safely parse response JSON, fallback to raw text for logging
+        try:
+            resp_data = resp.json()
+        except Exception:
+            resp_data = {"raw_text": resp.text}
+        order_id = (resp_data.get("data", {}) or {}).get("order_id", "")
         lots       = quantity // lot_size
 
         if resp.status_code == 200 and order_id:

@@ -860,7 +860,16 @@ export default function Dashboard() {
     return () => clearInterval(iv);
   }, [botStatus.symbol]);
 
-  const handleStart = async (sym: string, cap: number, m: string) => { await api.startBot(sym, cap, m); await fetchAll(); };
+  const handleStart = async (sym: string, cap: number, m: string) => {
+    if ((m || '').toLowerCase() === 'live') {
+      const ok = confirm('⚠️ You are about to start the bot in LIVE mode. This will place real orders. Are you sure?');
+      if (!ok) return;
+      await api.startBot(sym, cap, m, true);
+    } else {
+      await api.startBot(sym, cap, m);
+    }
+    await fetchAll();
+  };
   const handleStop  = async () => { await api.stopBot(); await fetchAll(); };
   const handleEmergencyStop = async () => {
     if (!confirm('🚨 Close ALL positions immediately?')) return;
